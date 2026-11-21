@@ -3,6 +3,7 @@ import calendar
 import re
 import statistics
 from datetime import date, timedelta
+from typing import Any
 
 from . import db
 from .categorize import NON_SPEND
@@ -14,7 +15,7 @@ def inr(v, sign=False):
     s = str(n)
     if len(s) > 3:
         head, tail = s[:-3], s[-3:]
-        parts = []
+        parts: list[str] = []
         while len(head) > 2:
             parts.insert(0, head[-2:])
             head = head[:-2]
@@ -50,7 +51,7 @@ def as_of(uid, txns=None):
 
 def monthly(txns):
     """{'2026-09': {'income','spend','invested','by_cat':{}}}"""
-    out = {}
+    out: dict[str, dict] = {}
     for t in txns:
         m = out.setdefault(t["date"][:7], {"income": 0.0, "spend": 0.0, "invested": 0.0, "by_cat": {}})
         a, c = t["amount"], t["category"]
@@ -81,7 +82,7 @@ def baseline(uid, txns=None):
     complete = sorted(k for k in mon if k < cur or (k == cur and ao.day >= last_day))
     use = complete[-3:] or [cur]
     n = len(use)
-    cats = {}
+    cats: dict[str, float] = {}
     for k in use:
         for c, v in mon[k]["by_cat"].items():
             cats[c] = cats.get(c, 0.0) + v / n
@@ -107,13 +108,13 @@ def detect_recurring(uid, txns=None):
         return []
     ao = as_of(uid, txns)
     meta = {m["merchant"]: m["last_used"] for m in db.rows("SELECT * FROM sub_meta WHERE uid=?", (uid,))}
-    groups = {}
+    groups: dict[str, list] = {}
     for t in txns:
         if t["amount"] < 0 and t["category"] not in SKIP_RECURRING and t["merchant"] != "unknown":
             groups.setdefault(t["merchant"], []).append(t)
     found = []
     for key, rows in groups.items():
-        days = {}
+        days: dict[str, float] = {}
         for r in rows:  # collapse same-day duplicates
             days.setdefault(r["date"], 0.0)
             days[r["date"]] += -r["amount"]
@@ -121,7 +122,7 @@ def detect_recurring(uid, txns=None):
         need = 3
         if len(ds) < 2:
             continue
-        gaps = [(parse_d(b) - parse_d(a)).days for a, b in zip(ds, ds[1:])]
+        gaps = [(parse_d(b) - parse_d(a)).days for a, b in zip(ds, ds[1:], strict=False)]
         med = statistics.median(gaps)
         cad = next((c for c in CADENCES if c[1] <= med <= c[2]), None)
         if not cad:
@@ -138,7 +139,7 @@ def detect_recurring(uid, txns=None):
         if cat0 in DISCRETIONARY and not fixed:
             continue  # irregular shopping/dining/etc. that merely happened monthly is not a subscription
         # price change: most recent step >2% where the charge was stable (>=2 equal charges) beforehand
-        change = None
+        change: dict[str, Any] | None = None
         for i in range(len(amts) - 1, 0, -1):
             if abs(amts[i] - amts[i - 1]) / amts[i - 1] > 0.02:
                 before = amts[:i]
@@ -195,7 +196,7 @@ def detect_recurring(uid, txns=None):
 def detect_cancelled(uid, txns, active_keys):
     """Subscription-like merchants charged >=2 times at a regular cadence that then stopped (>1.5 cycles ago)."""
     ao = as_of(uid, txns)
-    groups = {}
+    groups: dict[str, list] = {}
     for t in txns:
         if t["amount"] < 0 and t["category"] in ("Subscriptions", "Entertainment") and t["merchant"] not in active_keys:
             groups.setdefault(t["merchant"], []).append(t)
@@ -204,7 +205,7 @@ def detect_cancelled(uid, txns, active_keys):
         ds = sorted({r["date"] for r in rows})
         if len(ds) < 2:
             continue
-        gaps = [(parse_d(b) - parse_d(a)).days for a, b in zip(ds, ds[1:])]
+        gaps = [(parse_d(b) - parse_d(a)).days for a, b in zip(ds, ds[1:], strict=False)]
         cad = next((c for c in CADENCES if c[1] <= statistics.median(gaps) <= c[2]), None)
         if cad and (ao - parse_d(ds[-1])).days > cad[3] * 1.5:
             amt = sum(r["amount"] for r in rows if r["date"] == ds[-1])

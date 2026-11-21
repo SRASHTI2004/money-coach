@@ -16,9 +16,11 @@ def r(lo, hi, step=1):
 def month_events(y, m, last_day=None):
     """-> list of (date, narration, amount) for a month. Negative = debit."""
     nd = last_day or calendar.monthrange(y, m)[1]
-    D = lambda d: date(y, m, min(d, nd))
+    def D(d):
+        return date(y, m, min(d, nd))
     ev = []
-    add = lambda d, n, a: ev.append((D(d), n, a)) if d <= nd else None
+    def add(d, n, a):
+        return ev.append((D(d), n, a)) if d <= nd else None
     add(1, "NEFT-ACME TECHNOLOGIES SALARY", 85000.0)
     add(5, "UPI-RAMESH KUMAR-RENT-ramesh.k@okhdfcbank-5521", -22000.0)
     add(6, "UPI-BESCOM-ELECTRICITY BILL-bescom@paytm", -r(1700, 2400, 10))
@@ -35,16 +37,16 @@ def month_events(y, m, last_day=None):
     dining_n = 14 if m == 11 else 8
     dining_names = ["UPI-SWIGGY-swiggy.order@axisbank", "UPI-ZOMATO-zomato@icici", "POS-STARBUCKS COFFEE",
                     "UPI-KAMAT UPAHAR-kamat@okaxis", "UPI-SWIGGY-swiggy.order@axisbank", "POS-DOMINOS PIZZA"]
-    for i in range(dining_n):
+    for _i in range(dining_n):
         add(rng.randint(1, nd), rng.choice(dining_names), -r(180, 780 if m != 11 else 950, 10))
-    for i in range(9):
+    for _i in range(9):
         add(rng.randint(1, nd), rng.choice(["UPI-BIGBASKET-bigbasket@icici", "UPI-BLINKIT-blinkit@ybl",
                                            "POS-DMART AVENUE SUPERMARKET", "UPI-SRI GANESH PROVISION STORE-sgstores@ybl"]),
             -r(220, 1500, 10))
-    for i in range(7):
+    for _i in range(7):
         add(rng.randint(1, nd), rng.choice(["UPI-UBER INDIA-uber@axis", "UPI-OLA CABS-ola@ybl", "UPI-RAPIDO-rapido@ybl",
                                            "POS-INDIAN OIL PETROL PUMP"]), -r(90, 700, 10))
-    for i in range(2):
+    for _i in range(2):
         add(rng.randint(1, nd), rng.choice(["POS-AMAZON PAY INDIA", "UPI-MYNTRA-myntra@icici", "POS-FLIPKART"]),
             -r(600, 2400, 10))
     add(rng.randint(10, 25), "UPI-APOLLO PHARMACY-apollo@ybl", -r(250, 900, 10))

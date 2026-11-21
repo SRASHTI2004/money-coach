@@ -4,7 +4,6 @@ import calendar
 from . import analytics as an
 from . import planner
 
-
 FRONT_LOADED = {"Subscriptions", "Rent", "Utilities", "EMI & Loans", "Insurance"}  # bills land on fixed dates
 NO_SPIKE = FRONT_LOADED | {"Other", "Education", "Health", "Savings & Investments"}
 

@@ -4,7 +4,9 @@ import hashlib
 import json
 import os
 import re
+from collections.abc import Callable
 from datetime import date
+from typing import Any
 
 from . import analytics as an
 from . import db, gemini, guardrails, nudges, planner, review, timeline
@@ -132,7 +134,7 @@ def _find_goal(uid, name):
         next((g for g in goals if low and (low in g["name"].lower() or g["name"].lower() in low)), None)
 
 
-TOOLS = {"get_profile": tool_get_profile, "run_what_if": tool_run_what_if,
+TOOLS: dict[str, Callable[..., Any]] = {"get_profile": tool_get_profile, "run_what_if": tool_run_what_if,
          "list_subscriptions": tool_list_subscriptions, "list_nudges": tool_list_nudges,
          "explain_nudge": tool_explain_nudge, "get_spending_summary": tool_get_spending_summary,
          "propose_change": tool_propose_change}
@@ -202,15 +204,15 @@ def pending(uid, ids=None):
 # ------------------------------------------------------------------ Gemini loop
 def _declarations():
     from google.genai import types
-    S = lambda t, d="": {"type": t, "description": d}
+    def S(t, d=""):
+        return {"type": t, "description": d}
     adj = {"type": "ARRAY", "description": "Adjustments. percent>0 raises, <0 cuts; or amount = monthly rupee change.",
            "items": {"type": "OBJECT", "properties": {
                "category": S("STRING", "Spending category (e.g. Dining, Rent, Groceries) or 'Income'"),
                "percent": S("NUMBER", "Percent change, e.g. -30 for a 30% cut"),
                "amount": S("NUMBER", "Monthly rupee change instead of percent")}, "required": ["category"]}}
-    fd = lambda n, d, props=None, req=None: types.FunctionDeclaration(
-        name=n, description=d,
-        parameters={"type": "OBJECT", "properties": props or {"_": S("STRING", "unused")}, **({"required": req} if req else {})})
+    def fd(n, d, props=None, req=None):
+        return types.FunctionDeclaration(name=n, description=d, parameters={"type": "OBJECT", "properties": props or {"_": S("STRING", "unused")}, **({"required": req} if req else {})})  # type: ignore[arg-type]
     return [types.Tool(function_declarations=[
         fd("get_profile", "Read the user's financial profile, income, average spend by category, goals and emergency fund."),
         fd("run_what_if", "Simulate a scenario (cut a category, rent increase, income change) and get impact on free "
@@ -313,7 +315,7 @@ def _fallback_chat(uid, message, trace):
             if pct_m:
                 adjs.append({"category": cat, "percent": sign * float(pct_m.group(1).replace(",", ""))})
             else:
-                v = float(((amt_m.group(1) or amt_m.group(2)) if amt_m else bare_m.group(1)).replace(",", ""))
+                v = float(((amt_m.group(1) or amt_m.group(2)) if amt_m else (bare_m.group(1) if bare_m else "0")).replace(",", ""))
                 adjs.append({"category": cat, "amount": sign * v})
             res = tool_run_what_if(uid, adjs)
             trace.append({"tool": "run_what_if", "args": {"adjustments": adjs}, "result": brief("run_what_if", res)})

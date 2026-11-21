@@ -77,7 +77,8 @@ def ingest(uid, filename: str, data: bytes, force_kind=None):
 
 def store(uid, parsed, kind, notes=None, used_ai_parse=False):
     notes = notes or []
-    seen, items = set(), []
+    seen: set[str] = set()
+    items: list[dict] = []
     for t in parsed:
         t["hash"] = _tx_hash(t)
         if t["hash"] in seen:
@@ -92,7 +93,7 @@ def store(uid, parsed, kind, notes=None, used_ai_parse=False):
                " VALUES(?,?,?,?,?,?,?,?,?)",
                (uid, t["date"], t["description"], t["amount"], t["merchant"], t["category"], t["cat_source"],
                 t.get("source", kind), t["hash"]))
-    by_src = {}
+    by_src: dict[str, int] = {}
     for t in new:
         by_src[t["cat_source"]] = by_src.get(t["cat_source"], 0) + 1
     return {"format": kind, "parsed": len(parsed), "added": len(new), "duplicates_skipped": len(items) - len(new),

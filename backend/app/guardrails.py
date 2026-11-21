@@ -50,9 +50,7 @@ def is_investment_pick_request(text: str) -> bool:
     t = text or ""
     if _ASK.search(t):
         return True
-    if _NAMED.search(t) and _BUY_VERB.search(t):
-        return True
-    return False
+    return bool(_NAMED.search(t) and _BUY_VERB.search(t))
 
 
 def output_violates(text: str) -> bool:

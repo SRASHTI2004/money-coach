@@ -62,7 +62,7 @@ def detected(uid):
                     "title": f"{c['merchant'].title()} looks cancelled",
                     "detail": f"{an.inr(c['amount'])}/month stopped after {c['count']} charges",
                     "why": f"No charge since {c['last_date']}; that frees about {an.inr(c['amount'] * 12)}/year."})
-    inc = {}
+    inc: dict[str, list] = {}
     for t in txns:
         if t["category"] == "Income" and t["amount"] > 0:
             inc.setdefault(t["merchant"], []).append(t)
@@ -74,7 +74,7 @@ def detected(uid):
                             "title": f"New income source: {_clean(rows[0]['description'])}",
                             "detail": an.inr(rows[0]["amount"]), "why": "A credit from a new payer appeared."})
         rows = sorted(inc[main], key=lambda t: t["date"])
-        for a, b in zip(rows, rows[1:]):
+        for a, b in zip(rows, rows[1:], strict=False):
             if abs(b["amount"] - a["amount"]) / a["amount"] > 0.03:
                 out.append({"date": b["date"], "kind": "income", "source": "detected",
                             "title": f"Salary changed {an.inr(a['amount'])} -> {an.inr(b['amount'])}",

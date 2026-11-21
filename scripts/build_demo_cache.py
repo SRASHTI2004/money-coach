@@ -74,8 +74,9 @@ def main():
 
     rows = db.rows("SELECT h, v FROM cache")
     out = os.path.join(ROOT, "backend", "app", "gemini_cache.json")
-    json.dump({"note": "Pre-computed Gemini results for the bundled demo data. Regenerate: scripts/build_demo_cache.py",
-               "cache": {r["h"]: r["v"] for r in rows}}, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=0)
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump({"note": "Pre-computed Gemini results for the bundled demo data. Regenerate: scripts/build_demo_cache.py",
+               "cache": {r["h"]: r["v"] for r in rows}}, f, ensure_ascii=False, indent=0)
     print(f"wrote {len(rows)} entries to {out}; gemini calls={gemini.status['calls']}", flush=True)
 
 

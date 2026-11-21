@@ -5,6 +5,7 @@ import csv
 import io
 import re
 from datetime import datetime
+from typing import Literal
 
 DATE_FORMATS = ["%d/%m/%Y", "%d-%m-%Y", "%d/%m/%y", "%d-%m-%y", "%Y-%m-%d", "%d %b %Y", "%d-%b-%Y", "%d-%b-%y",
                 "%d %b %y", "%d %B %Y", "%d.%m.%Y", "%d/%b/%Y", "%b %d %Y", "%d%b%Y", "%d%b%y"]
@@ -88,7 +89,8 @@ def parse_csv(text: str):
         return []
     out = []
     for r in reader[1:]:
-        g = lambda k: r[ci[k]] if ci[k] is not None and ci[k] < len(r) else None
+        def g(k, row=r):
+            return row[ci[k]] if ci[k] is not None and ci[k] < len(row) else None
         d = parse_date(g("date"))
         if not d:
             continue
@@ -160,8 +162,10 @@ def parse_pdf_text(text: str):
 def parse_pdf_bytes(data: bytes):
     from pypdf import PdfReader
     reader = PdfReader(io.BytesIO(data))
-    best, best_text = [], ""
-    for mode in ("layout", "plain"):  # layout keeps table columns on one line
+    best: list[dict] = []
+    best_text = ""
+    modes: tuple[Literal["layout", "plain"], ...] = ("layout", "plain")
+    for mode in modes:  # layout keeps table columns on one line
         try:
             text = "\n".join((p.extract_text(extraction_mode=mode) or "") for p in reader.pages)
         except Exception:

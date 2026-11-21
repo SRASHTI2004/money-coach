@@ -108,7 +108,7 @@ def ai_categorize(merchants: list[dict]):
 
 def merchant_history(uid):
     """Majority category per merchant among already-labelled transactions (so 'SMS: ramesh kumar' inherits 'Rent')."""
-    votes = {}
+    votes: dict[str, list] = {}
     for r in db.rows("SELECT merchant, category, COUNT(*) c FROM transactions WHERE uid=? AND category<>'Other' "
                      "GROUP BY merchant, category", (uid,)):
         votes.setdefault(r["merchant"], []).append((r["c"], r["category"]))
@@ -118,7 +118,7 @@ def merchant_history(uid):
 def categorize_batch(uid, items: list[dict], use_ai=True):
     """Fills merchant/category/cat_source on each item. Order: user rules > built-in keywords > Gemini > Other."""
     rules = get_rules(uid)
-    unknown = {}
+    unknown: dict[str, dict] = {}
     hist = merchant_history(uid)
     for it in items:
         key = merchant_key(it["description"])

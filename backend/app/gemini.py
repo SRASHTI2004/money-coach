@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import time
+from typing import Any
 
 from . import db
 
@@ -10,7 +11,7 @@ PRIMARY = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 FALLBACK = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite")
 _client = None
 _down_until = 0.0
-status = {"available": None, "last_error": None, "model": None, "calls": 0, "cache_hits": 0}
+status: dict[str, Any] = {"available": None, "last_error": None, "model": None, "calls": 0, "cache_hits": 0}
 
 
 def _key():
@@ -19,9 +20,10 @@ def _key():
         return k
     p = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
     if os.path.exists(p):
-        for line in open(p, encoding="utf-8"):
-            if line.startswith("GEMINI_API_KEY="):
-                return line.split("=", 1)[1].strip()
+        with open(p, encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("GEMINI_API_KEY="):
+                    return line.split("=", 1)[1].strip()
     return None
 
 
@@ -118,7 +120,8 @@ def preload():
     """Load pre-computed Gemini results (demo categorisation, reviews, explanations, coach answers) into the cache."""
     if not os.path.exists(CACHE_FILE):
         return 0
-    data = json.load(open(CACHE_FILE, encoding="utf-8")).get("cache", {})
+    with open(CACHE_FILE, encoding="utf-8") as f:
+        data = json.load(f).get("cache", {})
     with db.conn() as c:
         c.executemany("INSERT OR IGNORE INTO cache(h,v) VALUES(?,?)", list(data.items()))
     return len(data)

@@ -51,7 +51,7 @@ def run(uid, events, horizon=HORIZON):
     ef_series, goals_series, free_series = [round(ef)], [round(sum(saved.values()))], []
     depleted = None
     for t in range(1, horizon + 1):
-        income, spend, invested, jobloss = income0, spend0, invested0, False
+        income, spend, invested, _jobloss = income0, spend0, invested0, False
         for ev in events:
             if not _active(ev, t):
                 continue
@@ -59,7 +59,6 @@ def run(uid, events, horizon=HORIZON):
             if k == "salary_change":
                 income *= 1 + float(ev.get("percent", 0)) / 100
             elif k == "job_loss":
-                jobloss = True
                 income = 0.0
                 invested = 0.0
                 spend -= disc0 * float(ev.get("cut_pct", 0)) / 100
@@ -100,10 +99,10 @@ def run(uid, events, horizon=HORIZON):
         goals_series.append(round(sum(saved.values())))
     goals = []
     for i in items:
-        t = done.get(i["id"])
-        d = an.add_months(today, t) if t is not None else None
+        done_at: int | None = done.get(i["id"])
+        d = an.add_months(today, done_at) if done_at is not None else None
         goals.append({"id": i["id"], "name": i["name"], "target": i["target"], "target_date": i["target_date"],
-                      "completion_month": t, "completion_date": d.isoformat() if d else None,
+                      "completion_month": done_at, "completion_date": d.isoformat() if d else None,
                       "on_track": bool(d and an.parse_d(i["target_date"]) >= d), "saved_end": round(saved[i["id"]])})
     ef_done = next((t for t, v in enumerate(ef_series) if ef_target and v >= ef_target), None)
     lo = min(ef_series)

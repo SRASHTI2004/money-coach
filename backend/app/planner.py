@@ -1,12 +1,12 @@
 """Persistent financial profile, goals, and the deterministic what-if simulator."""
 import math
-from datetime import date
+from typing import Any
 
 from . import analytics as an
 from . import db
 from .categorize import ESSENTIAL
 
-DEFAULT_PROFILE = {"monthly_income": None, "fixed_costs": [], "emergency_fund": 0.0,
+DEFAULT_PROFILE: dict[str, Any] = {"monthly_income": None, "fixed_costs": [], "emergency_fund": 0.0,
                    "emergency_target_months": 6, "emergency_monthly": 0.0, "budgets": {}}
 
 

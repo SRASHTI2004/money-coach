@@ -94,6 +94,15 @@ def generate(uid):
                             "severity": a["severity"], "title": f"{r['merchant'].title()}: "
                             f"{'price change' if a['type'] == 'price_change' else 'looks unused'}",
                             "body": a["message"], "data": {"merchant": r["merchant"]}})
+    from . import db
+    for m in db.kv_get(uid, "mandates", {}).values():
+        cur = next((r for r in an.detect_recurring(uid, txns) if r["merchant"] == m["merchant"]), None)
+        if cur and abs(cur["amount"] - m["amount"]) > 1:
+            out.append({"id": f"mandate:{m['merchant']}", "kind": "subscription", "severity": "warn",
+                        "title": f"UPI AutoPay: {m['merchant'].title()} is about to cost more",
+                        "body": f"Your UPI AutoPay mandate will debit {an.inr(m['amount'])} on {m['date']}, up from "
+                                f"{an.inr(cur['amount'])}. Review or revoke it in your UPI app before the debit.",
+                        "data": {"merchant": m["merchant"]}})
     order = {"alert": 0, "warn": 1, "info": 2}
     out.sort(key=lambda n: order[n["severity"]])
     return out

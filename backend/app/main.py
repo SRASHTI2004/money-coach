@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import analytics as an
-from . import categorize, coach, db, gemini, guardrails, ingest, nudges, planner, review, seed
+from . import categorize, coach, db, gemini, guardrails, ingest, lifeevents, nudges, planner, review, seed, timeline
 
 app = FastAPI(title="Money Coach")
 db.init()
@@ -106,9 +106,14 @@ def transactions(x_user: str | None = Header(None), month: str | None = None, ca
 def fix_category(tx_id: int, body: CategoryPatch, x_user: str | None = Header(None)):
     if body.category not in categorize.CATEGORIES:
         raise HTTPException(400, "Unknown category")
-    res = categorize.learn_rule(uid_of(x_user), tx_id, body.category)
+    uid = uid_of(x_user)
+    res = categorize.learn_rule(uid, tx_id, body.category)
     if res is None:
         raise HTTPException(404, "Transaction not found")
+    if res.get("rule_created"):
+        timeline.log(uid, "rule", f"Learned rule: {res['merchant']} -> {body.category}",
+                     f"{res['also_updated']} other transaction(s) re-labelled",
+                     "You corrected a category; the coach now applies it to future transactions.")
     return res
 
 
@@ -152,7 +157,11 @@ def get_profile(x_user: str | None = Header(None)):
 
 @app.put("/api/profile")
 def put_profile(body: ProfileIn, x_user: str | None = Header(None)):
-    return planner.save_profile(uid_of(x_user), body.model_dump(exclude_unset=True))
+    uid = uid_of(x_user)
+    old = planner.get_profile(uid)
+    new = planner.save_profile(uid, body.model_dump(exclude_unset=True))
+    timeline.log_profile_change(uid, old, new)
+    return new
 
 
 @app.get("/api/goals")
@@ -165,29 +174,48 @@ def goals(x_user: str | None = Header(None)):
 
 @app.post("/api/goals")
 def add_goal(body: GoalIn, x_user: str | None = Header(None)):
+    uid = uid_of(x_user)
     gid = db.run("INSERT INTO goals(uid,name,target_amount,saved,target_date,monthly_contrib) VALUES(?,?,?,?,?,?)",
-                 (uid_of(x_user), body.name, body.target_amount, body.saved, body.target_date, body.monthly_contrib))
+                 (uid, body.name, body.target_amount, body.saved, body.target_date, body.monthly_contrib))
+    timeline.log(uid, "goal", f"New goal: {body.name} {an.inr(body.target_amount)} by {body.target_date}",
+                 f"{an.inr(body.monthly_contrib)}/month planned", "Added in Plan")
     return {"id": gid}
 
 
 @app.put("/api/goals/{gid}")
 def edit_goal(gid: int, body: GoalIn, x_user: str | None = Header(None)):
+    uid = uid_of(x_user)
+    old = db.one("SELECT * FROM goals WHERE id=? AND uid=?", (gid, uid))
     db.run("UPDATE goals SET name=?,target_amount=?,saved=?,target_date=?,monthly_contrib=? WHERE id=? AND uid=?",
-           (body.name, body.target_amount, body.saved, body.target_date, body.monthly_contrib, gid, uid_of(x_user)))
+           (body.name, body.target_amount, body.saved, body.target_date, body.monthly_contrib, gid, uid))
+    if old and old["monthly_contrib"] != body.monthly_contrib:
+        timeline.log(uid, "goal", f"{body.name}: monthly plan {an.inr(old['monthly_contrib'])} -> {an.inr(body.monthly_contrib)}",
+                     "", "Edited in Plan")
     return {"ok": True}
 
 
 @app.delete("/api/goals/{gid}")
 def del_goal(gid: int, x_user: str | None = Header(None)):
-    db.run("DELETE FROM goals WHERE id=? AND uid=?", (gid, uid_of(x_user)))
+    uid = uid_of(x_user)
+    g = db.one("SELECT name FROM goals WHERE id=? AND uid=?", (gid, uid))
+    db.run("DELETE FROM goals WHERE id=? AND uid=?", (gid, uid))
+    if g:
+        timeline.log(uid, "goal", f"Goal removed: {g['name']}", "", "Deleted in Plan")
     return {"ok": True}
 
 
 # ---- subscriptions, simulator, nudges, review
 @app.get("/api/subscriptions")
 def subscriptions(x_user: str | None = Header(None)):
-    subs = an.detect_recurring(uid_of(x_user))
-    return {"items": subs, "monthly_total": round(sum(s["monthly_cost"] for s in subs if s["kind"] == "subscription"))}
+    uid = uid_of(x_user)
+    subs = an.detect_recurring(uid)
+    mand = []
+    for m in db.kv_get(uid, "mandates", {}).values():
+        cur = next((s for s in subs if s["merchant"] == m["merchant"]), None)
+        mand.append({**m, "current_amount": cur["amount"] if cur else None,
+                     "changed": bool(cur and abs(cur["amount"] - m["amount"]) > 1)})
+    return {"items": subs, "mandates": mand,
+            "monthly_total": round(sum(s["monthly_cost"] for s in subs if s["kind"] == "subscription"))}
 
 
 @app.put("/api/subscriptions/{merchant}/used")
@@ -195,6 +223,7 @@ def mark_used(merchant: str, body: UsedIn, x_user: str | None = Header(None)):
     uid = uid_of(x_user)
     d = body.last_used or an.as_of(uid).isoformat()
     db.run("INSERT OR REPLACE INTO sub_meta(uid,merchant,last_used) VALUES(?,?,?)", (uid, merchant, d))
+    timeline.log(uid, "subscription", f"Marked {merchant.title()} as used", "", "Resets the 'seems unused' alert.")
     return {"ok": True, "last_used": d}
 
 
@@ -207,6 +236,25 @@ def simulate(body: SimIn, x_user: str | None = Header(None)):
     sim = planner.simulate(uid_of(x_user), adjs)
     sim["summary"] = planner.summarize_sim(sim)
     return sim
+
+
+class LifeIn(BaseModel):
+    events: list[dict]
+
+
+@app.post("/api/life-events")
+def life_events(body: LifeIn, x_user: str | None = Header(None)):
+    return lifeevents.simulate(uid_of(x_user), body.events[:8])
+
+
+@app.post("/api/life-events/narrate")
+def life_narrate(body: LifeIn, x_user: str | None = Header(None)):
+    return lifeevents.narrate(uid_of(x_user), body.events[:8])
+
+
+@app.get("/api/timeline")
+def get_timeline(x_user: str | None = Header(None)):
+    return timeline.build(uid_of(x_user))
 
 
 @app.get("/api/nudges")

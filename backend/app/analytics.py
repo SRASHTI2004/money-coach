@@ -1,5 +1,6 @@
 """Deterministic money maths: monthly aggregates, baseline, recurring/subscription detection. No AI here."""
 import calendar
+import re
 import statistics
 from datetime import date, timedelta
 
@@ -94,6 +95,8 @@ def baseline(uid, txns=None):
 # ------------------------------------------------------------------ recurring detection
 CADENCES = [("weekly", 6, 8, 7), ("monthly", 25, 35, 30), ("quarterly", 84, 98, 91), ("yearly", 350, 380, 365)]
 STREAMING = {"netflix", "hotstar", "primevideo", "sonyliv", "zee5", "jiocinema", "youtube"}
+AUTOPAY_RX = re.compile(r"(?i)auto-?pay|mandate|\bnach\b|\bach\b|standing instruction")
+BILL_CATS = {"EMI & Loans", "Insurance", "Rent", "Utilities", "Savings & Investments"}
 SKIP_RECURRING = {"Income", "Cash", "Transfers"}
 DISCRETIONARY = {"Shopping", "Dining", "Groceries", "Transport", "Health", "Other", "Travel", "Entertainment"}
 
@@ -149,8 +152,9 @@ def detect_recurring(uid, txns=None):
         cat = rows[-1]["category"]
         name = rows[-1]["description"]
         monthly_cost = amts[-1] * {"weekly": 4.345, "monthly": 1, "quarterly": 1 / 3, "yearly": 1 / 12}[cad[0]]
+        autopay = any(AUTOPAY_RX.search(r["description"]) for r in rows)
         kind = "saving" if cat == "Savings & Investments" else \
-            "subscription" if cat in ("Subscriptions", "Entertainment") else "bill"
+            "subscription" if cat in ("Subscriptions", "Entertainment") or (autopay and cat not in BILL_CATS) else "bill"
         alerts = []
         if change and kind != "saving":
             up = change["pct"] > 0
@@ -171,7 +175,7 @@ def detect_recurring(uid, txns=None):
                       "amount": round(amts[-1], 2), "typical": round(med_amt, 2), "fixed_amount": bool(fixed),
                       "count": len(ds), "first_date": ds[0], "last_date": ds[-1], "next_date": nxt.isoformat(),
                       "monthly_cost": round(monthly_cost, 2), "last_used": lu, "price_change": change,
-                      "alerts": alerts})
+                      "autopay": autopay, "alerts": alerts})
     streaming = [f for f in found if f["merchant"] in STREAMING]
     if len(streaming) >= 2:
         tot = sum(f["monthly_cost"] for f in streaming)
@@ -186,3 +190,23 @@ def detect_recurring(uid, txns=None):
                                 "message": f"{f['merchant'].title()} is due around {f['next_date']} ({inr(f['amount'])})."})
     found.sort(key=lambda f: -f["monthly_cost"])
     return found
+
+
+def detect_cancelled(uid, txns, active_keys):
+    """Subscription-like merchants charged >=2 times at a regular cadence that then stopped (>1.5 cycles ago)."""
+    ao = as_of(uid, txns)
+    groups = {}
+    for t in txns:
+        if t["amount"] < 0 and t["category"] in ("Subscriptions", "Entertainment") and t["merchant"] not in active_keys:
+            groups.setdefault(t["merchant"], []).append(t)
+    out = []
+    for key, rows in groups.items():
+        ds = sorted({r["date"] for r in rows})
+        if len(ds) < 2:
+            continue
+        gaps = [(parse_d(b) - parse_d(a)).days for a, b in zip(ds, ds[1:])]
+        cad = next((c for c in CADENCES if c[1] <= statistics.median(gaps) <= c[2]), None)
+        if cad and (ao - parse_d(ds[-1])).days > cad[3] * 1.5:
+            amt = sum(r["amount"] for r in rows if r["date"] == ds[-1])
+            out.append({"merchant": key, "amount": abs(amt), "last_date": ds[-1], "count": len(ds)})
+    return out

@@ -1,7 +1,7 @@
 """Ingestion pipeline: detect format -> deterministic parse -> Gemini rescue for what regex missed -> categorise -> store."""
 import hashlib
 
-from . import categorize, db, gemini, parsing
+from . import categorize, db, gemini, parsing, timeline
 
 
 def _tx_hash(t):
@@ -42,6 +42,15 @@ def ingest(uid, filename: str, data: bytes, force_kind=None):
         if kind == "csv":
             parsed = parsing.parse_csv(text)
         else:
+            mandates = parsing.parse_mandates(text)
+            if mandates:
+                saved = db.kv_get(uid, "mandates", {})
+                for m in mandates:
+                    key = categorize.merchant_key(m["merchant_name"])
+                    saved[key] = {"merchant": key, "name": m["merchant_name"], "amount": m["amount"], "date": m["date"],
+                                  "notice_date": max((p["date"] for p in parsing.parse_sms(text)[0]), default=m["date"])}
+                db.kv_set(uid, "mandates", saved)
+                notes.append(f"Found {len(mandates)} upcoming UPI AutoPay mandate notice(s)")
             parsed, failed = parsing.parse_sms(text)
             if failed:
                 extra = ai_extract("\n\n".join(failed), "sms", fh)
@@ -58,7 +67,12 @@ def ingest(uid, filename: str, data: bytes, force_kind=None):
             notes.append("Layout was unusual - Gemini extracted the transactions")
         elif not parsed:
             notes.append("Could not parse any transactions; AI fallback unavailable")
-    return store(uid, parsed, kind, notes, used_ai_parse)
+    res = store(uid, parsed, kind, notes, used_ai_parse)
+    if res["added"]:
+        timeline.log(uid, "import", f"Imported {res['added']} transactions from {kind.upper()}",
+                     filename if filename != "paste.txt" else "pasted text",
+                     "New data re-computes your averages, subscriptions and nudges.")
+    return res
 
 
 def store(uid, parsed, kind, notes=None, used_ai_parse=False):

@@ -51,6 +51,10 @@ def month_events(y, m, last_day=None):
     add(rng.randint(14, 27), "UPI-URBAN COMPANY HOME SERVICES-urbancompany@hdfcbank", -r(400, 900, 50))
     add(rng.randint(14, 27), "ATM-CASH WDL-HSR LAYOUT", -2000.0)
     add(rng.randint(14, 27), "POS-BOOKMYSHOW", -r(300, 700, 10))
+    if m in (8, 9):  # cancelled later: only charged twice
+        add(14, "UPI-AUDIBLE-audible@icici", -199.0)
+    if m == 10:
+        add(18, "NEFT-FREELANCE-DESIGN CLIENT PAYMENT", 12000.0)
     return sorted(ev, key=lambda e: e[0])
 
 
@@ -136,7 +140,10 @@ def sms_lines(events):
             out.append(f"Rs.{amt} credited to A/c XX4821 on {d.strftime('%d-%m-%y')} by NEFT-{label.title()}. "
                        f"Avl Bal Rs.{fmt_inr(60000)}. -HDFC Bank")
             continue
-        if n.startswith("UPI-") and handle:
+        if any(k in n for k in ("SPOTIFY", "HOTSTAR", "NETFLIX")):
+            out.append(f"UPI Mandate: Rs.{amt} debited from A/c XX4821 on {d.strftime('%d-%m-%y')} for {label.title()} "
+                       f"via UPI AutoPay. Ref {rng.randint(10**11, 10**12 - 1)}. -HDFC Bank")
+        elif n.startswith("UPI-") and handle:
             vpa = handle
             if style == 0:
                 out.append(f"Rs.{amt} debited from A/c XX4821 on {d.strftime('%d-%m-%y')} to VPA {vpa} "
@@ -173,6 +180,10 @@ def main():
     lines = sms_lines(nov)
     lines.insert(3, "Your OTP for transaction is 482913. Do not share it with anyone. -HDFC Bank")
     lines.insert(9, "Rs.1,179.00 will be debited on 08-12-26 for Airtel Broadband. Maintain sufficient balance.")
+    lines.insert(12, "Your UPI AutoPay mandate of Rs.799.00 for Netflix will be debited on 05-12-26. Maintain "
+                     "sufficient balance. -HDFC Bank")
+    lines.insert(13, "Your UPI AutoPay mandate of Rs.349.00 for Hotstar will be debited on 07-12-26. Maintain "
+                     "sufficient balance. -HDFC Bank")
     lines.insert(15, "Dear customer, get 5% cashback on your next Swiggy order! T&C apply.")
     with open(os.path.join(OUT, "sms_nov_2026.txt"), "w", encoding="utf-8") as f:
         f.write("\n\n".join(lines) + "\n")

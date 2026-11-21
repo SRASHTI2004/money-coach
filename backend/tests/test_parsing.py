@@ -20,7 +20,7 @@ def test_dates_many_formats():
 
 def test_csv_with_preamble_and_split_columns():
     rows = parsing.parse_csv(open(os.path.join(S, "hdfc_aug_sep_2026.csv"), encoding="utf-8").read())
-    assert len(rows) == 86
+    assert len(rows) == 88
     assert rows[0]["amount"] == 85000 and rows[1]["amount"] < 0
 
 
@@ -32,7 +32,7 @@ def test_csv_single_amount_with_drcr():
 
 def test_pdf_balance_inference():
     rows, _ = parsing.parse_pdf_bytes(open(os.path.join(S, "icici_oct_2026_statement.pdf"), "rb").read())
-    assert len(rows) == 43
+    assert len(rows) == 44
     assert rows[0]["amount"] == 85000 and rows[1]["amount"] < 0
 
 

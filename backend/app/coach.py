@@ -5,7 +5,7 @@ import re
 from datetime import date
 
 from . import analytics as an
-from . import db, gemini, guardrails, nudges, planner, review
+from . import db, gemini, guardrails, nudges, planner, review, timeline
 from .categorize import CATEGORIES
 
 PROPOSAL_KINDS = {"set_budget", "update_goal", "create_goal", "update_profile"}
@@ -158,6 +158,8 @@ def apply_proposal(uid, pid):
     elif k == "update_profile":
         planner.save_profile(uid, {p["field"]: p["value"]})
     db.run("UPDATE proposals SET status='applied' WHERE id=?", (pid,))
+    timeline.log(uid, "budget" if k == "set_budget" else "goal" if "goal" in k else "income",
+                 describe_proposal(pr), pr["reason"] or "", "Proposed by the coach, confirmed by you.")
     return {"status": "applied", "kind": k, "payload": p}
 
 

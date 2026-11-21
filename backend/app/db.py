@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS proposals(
 CREATE TABLE IF NOT EXISTS chat(
   id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT NOT NULL, role TEXT NOT NULL, text TEXT NOT NULL,
   created TEXT DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS events(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT NOT NULL, date TEXT NOT NULL, kind TEXT NOT NULL,
+  title TEXT NOT NULL, detail TEXT, why TEXT);
 CREATE TABLE IF NOT EXISTS cache(h TEXT PRIMARY KEY, v TEXT NOT NULL);
 """
 
@@ -86,5 +89,5 @@ def kv_set(uid, k, v):
 
 def wipe_user(uid):
     with conn() as c:
-        for t in ("transactions", "rules", "kv", "goals", "sub_meta", "proposals", "chat"):
+        for t in ("transactions", "rules", "kv", "goals", "sub_meta", "proposals", "chat", "events"):
             c.execute(f"DELETE FROM {t} WHERE uid=?", (uid,))

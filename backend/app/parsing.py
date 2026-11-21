@@ -193,7 +193,7 @@ def _sms_merchant(s):
         r"(?i)\bat\s+([A-Za-z][A-Za-z0-9 &*._\-]{2,30}?)(?:\s+on\b|\s+Avl|\s+Bal|\.|,|$)",
         r"(?i)\bto\s+(?!your|a/c|ac\b)([A-Za-z][A-Za-z0-9 &*._\-]{2,30}?)(?:\s+on\b|\s+Ref|\s+UPI|\s+Avl|\.|,|$)",
         r"(?i)\bfrom\s+(?!a/c|ac\b)([A-Za-z][A-Za-z0-9 &*._\-]{2,30}?)(?:\s+on\b|\s+Ref|\s+UPI|\s+Avl|\.|,|$)",
-        r"(?i)\bfor\s+([A-Za-z][A-Za-z0-9 &*._\-]{2,30}?)(?:\.|,|$)",
+        r"(?i)\bfor\s+([A-Za-z][A-Za-z0-9 &*._\-]{2,30}?)(?:\.|,|\s+via\b|$)",
         r"(?i)\bby\s+([A-Za-z][A-Za-z0-9 &*._\-]{2,30}?)(?:\.|,|$)",
     ]
     for p in pats:
@@ -234,7 +234,8 @@ def parse_sms(text: str):
             continue
         merch = _sms_merchant(s) or ("Credit" if not is_debit else "Unknown")
         amt = parse_amount(am.group(1))
-        mode = " (UPI)" if re.search(r"(?i)\bupi\b|vpa", s) else ""
+        mode = " (UPI AutoPay)" if re.search(r"(?i)auto-?pay|mandate", s) else \
+            " (UPI)" if re.search(r"(?i)\bupi\b|vpa", s) else ""
         out.append({"date": d, "description": f"SMS: {merch}{mode}", "amount": round(-amt if is_debit else amt, 2),
                     "source": "sms"})
     return out, failed
@@ -249,3 +250,20 @@ def detect_format(filename: str, data: bytes):
                                          and t.count(",") + t.count("\t") > 5):
         return "csv"
     return "sms"
+
+
+_MANDATE = re.compile(r"(?i)(?:auto-?pay|mandate).{0,40}?(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)\s+for\s+"
+                      r"([A-Za-z][A-Za-z0-9 &._\-]{1,30}?)\s+(?:will be|is scheduled to be|is due to be)\s+debited\s+on\s+"
+                      + DATE_RE)
+
+
+def parse_mandates(text: str):
+    """Upcoming UPI AutoPay notices ('mandate of Rs.799 for Netflix will be debited on 05-12-26')."""
+    out = []
+    for ch in [c.strip() for c in re.split(r"\n", text) if c.strip()]:
+        m = _MANDATE.search(re.sub(r"\s+", " ", ch))
+        if m:
+            d = parse_date(m.group(3))
+            if d:
+                out.append({"merchant_name": m.group(2).strip(), "amount": parse_amount(m.group(1)), "date": d})
+    return out

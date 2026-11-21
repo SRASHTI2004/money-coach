@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from . import db
+from .config import BREAKER_SECONDS, DEFAULT_TIMEOUT_MS
 
 PRIMARY = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 FALLBACK = os.environ.get("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite")
@@ -35,7 +36,7 @@ def client():
         if not k:
             return None
         from google.genai import types as _t
-        _client = genai.Client(api_key=k, http_options=_t.HttpOptions(timeout=int(os.environ.get("GEMINI_TIMEOUT_MS", "20000"))))
+        _client = genai.Client(api_key=k, http_options=_t.HttpOptions(timeout=int(os.environ.get("GEMINI_TIMEOUT_MS", DEFAULT_TIMEOUT_MS))))
     return _client
 
 
@@ -109,7 +110,7 @@ def generate(prompt, system=None, json_mode=False, cache_key=None, tools=None, c
                 if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "404" in msg:
                     break
     status.update(available=False, last_error=str(last)[:200])
-    _down_until = time.time() + 45
+    _down_until = time.time() + BREAKER_SECONDS
     return None
 
 

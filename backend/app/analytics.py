@@ -7,6 +7,16 @@ from typing import Any
 
 from . import db
 from .categorize import NON_SPEND
+from .config import (
+    CANCELLED_AFTER_CYCLES,
+    DAYS_PER_MONTH,
+    FIXED_AMOUNT_SPREAD,
+    MIN_CADENCE_CONSISTENCY,
+    PRICE_CHANGE_WINDOW_DAYS,
+    PRICE_STEP,
+    UNUSED_AFTER_DAYS,
+    UPCOMING_WITHIN_DAYS,
+)
 
 
 def inr(v, sign=False):
@@ -37,7 +47,7 @@ def add_months(d: date, n: int) -> date:
 
 
 def months_between(a: date, b: date) -> float:
-    return (b - a).days / 30.4375
+    return (b - a).days / DAYS_PER_MONTH
 
 
 def get_txns(uid):
@@ -129,22 +139,22 @@ def detect_recurring(uid, txns=None):
             continue
         ok = sum(1 for g in gaps if cad[1] <= g <= cad[2]) / len(gaps)
         need = 3 if cad[0] in ("weekly", "monthly") else 2
-        if len(ds) < need or ok < 0.7:
+        if len(ds) < need or ok < MIN_CADENCE_CONSISTENCY:
             continue
         amts = [days[d] for d in ds]
         med_amt = statistics.median(amts)
         spread = (max(amts) - min(amts)) / med_amt if med_amt else 0
-        fixed = spread <= 0.05
+        fixed = spread <= FIXED_AMOUNT_SPREAD
         cat0 = rows[-1]["category"]
         if cat0 in DISCRETIONARY and not fixed:
             continue  # irregular shopping/dining/etc. that merely happened monthly is not a subscription
         # price change: most recent step >2% where the charge was stable (>=2 equal charges) beforehand
         change: dict[str, Any] | None = None
         for i in range(len(amts) - 1, 0, -1):
-            if abs(amts[i] - amts[i - 1]) / amts[i - 1] > 0.02:
+            if abs(amts[i] - amts[i - 1]) / amts[i - 1] > PRICE_STEP:
                 before = amts[:i]
                 stable = len(before) >= 2 and all(abs(a - before[-1]) / before[-1] <= 0.02 for a in before[-2:])
-                if stable and (ao - parse_d(ds[i])).days <= 75:
+                if stable and (ao - parse_d(ds[i])).days <= PRICE_CHANGE_WINDOW_DAYS:
                     change = {"old": amts[i - 1], "new": amts[i], "date": ds[i],
                               "pct": round((amts[i] - amts[i - 1]) / amts[i - 1] * 100, 1)}
                 break
@@ -167,7 +177,7 @@ def detect_recurring(uid, txns=None):
         lu = meta.get(key)
         if kind == "subscription" and lu:
             idle = (ao - parse_d(lu)).days
-            if idle > 45:
+            if idle > UNUSED_AFTER_DAYS:
                 alerts.append({"type": "unused", "severity": "warn",
                                "message": f"You haven't used {key.title()} in {idle} days (last used {lu}) but it still "
                                           f"costs {inr(amts[-1])}/{cad[0][:-2] if cad[0] != 'weekly' else 'week'}. "
@@ -186,7 +196,7 @@ def detect_recurring(uid, txns=None):
                                 "message": f"You pay for {len(streaming)} video/music services ({names}) totalling "
                                            f"{inr(tot)}/month. Keeping fewer could save money."})
     for f in found:
-        if 0 <= (parse_d(f["next_date"]) - ao).days <= 3 and f["kind"] != "saving":
+        if 0 <= (parse_d(f["next_date"]) - ao).days <= UPCOMING_WITHIN_DAYS and f["kind"] != "saving":
             f["alerts"].append({"type": "upcoming", "severity": "info",
                                 "message": f"{f['merchant'].title()} is due around {f['next_date']} ({inr(f['amount'])})."})
     found.sort(key=lambda f: -f["monthly_cost"])
@@ -207,7 +217,7 @@ def detect_cancelled(uid, txns, active_keys):
             continue
         gaps = [(parse_d(b) - parse_d(a)).days for a, b in zip(ds, ds[1:], strict=False)]
         cad = next((c for c in CADENCES if c[1] <= statistics.median(gaps) <= c[2]), None)
-        if cad and (ao - parse_d(ds[-1])).days > cad[3] * 1.5:
+        if cad and (ao - parse_d(ds[-1])).days > cad[3] * CANCELLED_AFTER_CYCLES:
             amt = sum(r["amount"] for r in rows if r["date"] == ds[-1])
             out.append({"merchant": key, "amount": abs(amt), "last_date": ds[-1], "count": len(ds)})
     return out

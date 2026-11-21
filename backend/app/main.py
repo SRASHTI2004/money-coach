@@ -1,324 +1,85 @@
-"""FastAPI app: JSON API under /api, React build served from the same service."""
+"""FastAPI app: JSON API under /api (routers in app/api), React build served from the same service."""
+import logging
 import os
+from collections.abc import Awaitable, Callable
+from typing import Any
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from . import analytics as an
-from . import categorize, coach, db, gemini, guardrails, ingest, lifeevents, nudges, planner, review, seed, timeline
+from . import db, gemini, guardrails
+from .api import coach_api, data, insights, plan
 
-app = FastAPI(title="Money Coach")
+log = logging.getLogger("money-coach")
+app = FastAPI(title="Money Coach", docs_url=None, redoc_url=None)
 db.init()
 gemini.preload()
 
+for module in (data, plan, insights, coach_api):
+    app.include_router(module.router)
 
-def uid_of(x_user: str | None) -> str:
-    u = "".join(ch for ch in (x_user or "demo") if ch.isalnum() or ch in "-_")[:64]
-    return u or "demo"
-
-
-class CategoryPatch(BaseModel):
-    category: str
-
-
-class TextIn(BaseModel):
-    text: str
-    kind: str | None = None
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Content-Security-Policy": ("default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                                "connect-src 'self'; frame-ancestors 'none'"),
+}
 
 
-class ProfileIn(BaseModel):
-    monthly_income: float | None = None
-    fixed_costs: list[dict] | None = None
-    emergency_fund: float | None = None
-    emergency_target_months: float | None = None
-    emergency_monthly: float | None = None
-    budgets: dict[str, float] | None = None
+@app.middleware("http")
+async def security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    """Add basic hardening headers to every response."""
+    response = await call_next(request)
+    for k, v in SECURITY_HEADERS.items():
+        response.headers.setdefault(k, v)
+    return response
 
 
-class GoalIn(BaseModel):
-    name: str
-    target_amount: float
-    saved: float = 0
-    target_date: str
-    monthly_contrib: float = 0
+def _error(status: int, message: str) -> JSONResponse:
+    """All API errors share one shape: {"detail": "<human readable message>"}."""
+    return JSONResponse(status_code=status, content={"detail": message})
 
 
-class SimIn(BaseModel):
-    adjustments: list[dict]
+@app.exception_handler(StarletteHTTPException)
+async def http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+    """Normalise HTTP errors."""
+    return _error(exc.status_code, str(exc.detail))
 
 
-class ChatIn(BaseModel):
-    message: str
+@app.exception_handler(RequestValidationError)
+async def validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
+    """Turn pydantic validation errors into one readable sentence."""
+    first = exc.errors()[0] if exc.errors() else {}
+    where = ".".join(str(p) for p in first.get("loc", ()) if p != "body")
+    return _error(422, f"Invalid input{f' ({where})' if where else ''}: {first.get('msg', 'please check your values')}.")
 
 
-class UsedIn(BaseModel):
-    last_used: str | None = None
+@app.exception_handler(Exception)
+async def unexpected_error(_: Request, exc: Exception) -> JSONResponse:
+    """Never leak internals; log the exception type only (no request bodies, no secrets)."""
+    log.error("unhandled %s", type(exc).__name__)
+    return _error(500, "Something went wrong on our side. Please try again.")
 
 
 @app.get("/api/health")
-def health():
+def health() -> dict[str, Any]:
+    """Liveness + AI status (used by Render and the UI badge)."""
     return {"ok": True, "ai_enabled": gemini.enabled(), "ai": gemini.status, "disclaimer": guardrails.DISCLAIMER}
 
 
-@app.post("/api/demo/load")
-def demo_load(x_user: str | None = Header(None)):
-    return {"loaded": seed.load_demo(uid_of(x_user))}
-
-
-@app.post("/api/reset")
-def reset(x_user: str | None = Header(None)):
-    db.wipe_user(uid_of(x_user))
-    return {"ok": True}
-
-
-# ---- ingestion & transactions
-@app.post("/api/upload")
-async def upload(file: UploadFile = File(...), x_user: str | None = Header(None)):
-    data = await file.read()
-    if len(data) > 8_000_000:
-        raise HTTPException(413, "File too large (8 MB max)")
-    return ingest.ingest(uid_of(x_user), file.filename or "upload", data)
-
-
-@app.post("/api/paste")
-def paste(body: TextIn, x_user: str | None = Header(None)):
-    return ingest.ingest(uid_of(x_user), "paste.txt", body.text.encode(), force_kind=body.kind)
-
-
-@app.get("/api/transactions")
-def transactions(x_user: str | None = Header(None), month: str | None = None, category: str | None = None,
-                 q: str | None = None, limit: int = 500):
-    sql, args = "SELECT * FROM transactions WHERE uid=?", [uid_of(x_user)]
-    if month:
-        sql += " AND date LIKE ?"
-        args.append(month + "%")
-    if category:
-        sql += " AND category=?"
-        args.append(category)
-    if q:
-        sql += " AND (description LIKE ? OR merchant LIKE ?)"
-        args += [f"%{q}%", f"%{q}%"]
-    return db.rows(sql + " ORDER BY date DESC, id DESC LIMIT ?", (*args, limit))
-
-
-@app.patch("/api/transactions/{tx_id}")
-def fix_category(tx_id: int, body: CategoryPatch, x_user: str | None = Header(None)):
-    if body.category not in categorize.CATEGORIES:
-        raise HTTPException(400, "Unknown category")
-    uid = uid_of(x_user)
-    res = categorize.learn_rule(uid, tx_id, body.category)
-    if res is None:
-        raise HTTPException(404, "Transaction not found")
-    if res.get("rule_created"):
-        timeline.log(uid, "rule", f"Learned rule: {res['merchant']} -> {body.category}",
-                     f"{res['also_updated']} other transaction(s) re-labelled",
-                     "You corrected a category; the coach now applies it to future transactions.")
-    return res
-
-
-@app.get("/api/categories")
-def categories():
-    return categorize.CATEGORIES
-
-
-@app.get("/api/rules")
-def rules(x_user: str | None = Header(None)):
-    return categorize.get_rules(uid_of(x_user))
-
-
-@app.delete("/api/rules/{rid}")
-def delete_rule(rid: int, x_user: str | None = Header(None)):
-    db.run("DELETE FROM rules WHERE id=? AND uid=?", (rid, uid_of(x_user)))
-    return {"ok": True}
-
-
-# ---- dashboard
-@app.get("/api/summary")
-def summary(x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    txns = an.get_txns(uid)
-    if not txns:
-        return {"empty": True}
-    mon = an.monthly(txns)
-    ao = an.as_of(uid, txns)
-    snap = planner.snapshot(uid)
-    return {"empty": False, "as_of": ao.isoformat(), "months": [{"month": k, **{x: round(v[x]) for x in ("income", "spend", "invested")},
-            "by_cat": {c: round(a) for c, a in v["by_cat"].items()}} for k, v in sorted(mon.items())],
-            "snapshot": snap, "profile": planner.get_profile(uid), "tx_count": len(txns),
-            "uncategorized": sum(1 for t in txns if t["category"] == "Other")}
-
-
-# ---- profile & goals
-@app.get("/api/profile")
-def get_profile(x_user: str | None = Header(None)):
-    return planner.get_profile(uid_of(x_user))
-
-
-@app.put("/api/profile")
-def put_profile(body: ProfileIn, x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    old = planner.get_profile(uid)
-    new = planner.save_profile(uid, body.model_dump(exclude_unset=True))
-    timeline.log_profile_change(uid, old, new)
-    return new
-
-
-@app.get("/api/goals")
-def goals(x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    snap = planner.snapshot(uid)
-    return {"items": snap["goals"]["items"], "free_cash": snap["free_cash"], "planned_total": snap["goals"]["planned_total"],
-            "scale": snap["goals"]["scale"]}
-
-
-@app.post("/api/goals")
-def add_goal(body: GoalIn, x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    gid = db.run("INSERT INTO goals(uid,name,target_amount,saved,target_date,monthly_contrib) VALUES(?,?,?,?,?,?)",
-                 (uid, body.name, body.target_amount, body.saved, body.target_date, body.monthly_contrib))
-    timeline.log(uid, "goal", f"New goal: {body.name} {an.inr(body.target_amount)} by {body.target_date}",
-                 f"{an.inr(body.monthly_contrib)}/month planned", "Added in Plan")
-    return {"id": gid}
-
-
-@app.put("/api/goals/{gid}")
-def edit_goal(gid: int, body: GoalIn, x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    old = db.one("SELECT * FROM goals WHERE id=? AND uid=?", (gid, uid))
-    db.run("UPDATE goals SET name=?,target_amount=?,saved=?,target_date=?,monthly_contrib=? WHERE id=? AND uid=?",
-           (body.name, body.target_amount, body.saved, body.target_date, body.monthly_contrib, gid, uid))
-    if old and old["monthly_contrib"] != body.monthly_contrib:
-        timeline.log(uid, "goal", f"{body.name}: monthly plan {an.inr(old['monthly_contrib'])} -> {an.inr(body.monthly_contrib)}",
-                     "", "Edited in Plan")
-    return {"ok": True}
-
-
-@app.delete("/api/goals/{gid}")
-def del_goal(gid: int, x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    g = db.one("SELECT name FROM goals WHERE id=? AND uid=?", (gid, uid))
-    db.run("DELETE FROM goals WHERE id=? AND uid=?", (gid, uid))
-    if g:
-        timeline.log(uid, "goal", f"Goal removed: {g['name']}", "", "Deleted in Plan")
-    return {"ok": True}
-
-
-# ---- subscriptions, simulator, nudges, review
-@app.get("/api/subscriptions")
-def subscriptions(x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    subs = an.detect_recurring(uid)
-    mand = []
-    for m in db.kv_get(uid, "mandates", {}).values():
-        cur = next((s for s in subs if s["merchant"] == m["merchant"]), None)
-        mand.append({**m, "current_amount": cur["amount"] if cur else None,
-                     "changed": bool(cur and abs(cur["amount"] - m["amount"]) > 1)})
-    return {"items": subs, "mandates": mand,
-            "monthly_total": round(sum(s["monthly_cost"] for s in subs if s["kind"] == "subscription"))}
-
-
-@app.put("/api/subscriptions/{merchant}/used")
-def mark_used(merchant: str, body: UsedIn, x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    d = body.last_used or an.as_of(uid).isoformat()
-    db.run("INSERT OR REPLACE INTO sub_meta(uid,merchant,last_used) VALUES(?,?,?)", (uid, merchant, d))
-    timeline.log(uid, "subscription", f"Marked {merchant.title()} as used", "", "Resets the 'seems unused' alert.")
-    return {"ok": True, "last_used": d}
-
-
-@app.post("/api/simulate")
-def simulate(body: SimIn, x_user: str | None = Header(None)):
-    adjs = []
-    for a in body.adjustments:
-        if a.get("category") and (a.get("percent") is not None or a.get("amount") is not None):
-            adjs.append({"category": a["category"], **{k: float(a[k]) for k in ("percent", "amount") if a.get(k) is not None}})
-    sim = planner.simulate(uid_of(x_user), adjs)
-    sim["summary"] = planner.summarize_sim(sim)
-    return sim
-
-
-class LifeIn(BaseModel):
-    events: list[dict]
-
-
-@app.post("/api/life-events")
-def life_events(body: LifeIn, x_user: str | None = Header(None)):
-    return lifeevents.simulate(uid_of(x_user), body.events[:8])
-
-
-@app.post("/api/life-events/narrate")
-def life_narrate(body: LifeIn, x_user: str | None = Header(None)):
-    return lifeevents.narrate(uid_of(x_user), body.events[:8])
-
-
-@app.get("/api/timeline")
-def get_timeline(x_user: str | None = Header(None)):
-    return timeline.build(uid_of(x_user))
-
-
-@app.get("/api/nudges")
-def get_nudges(x_user: str | None = Header(None)):
-    return nudges.generate(uid_of(x_user))
-
-
-@app.get("/api/nudges/explain")
-def explain(id: str, x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    base = coach.tool_explain_nudge(uid, id)
-    if "error" in base:
-        raise HTTPException(404, base["error"])
-    prompt = ("Explain this spending nudge to the user in 2-3 friendly sentences and give ONE concrete, low-effort "
-              "action. Use only these facts; do not mention investment products.\n" + str(base))
-    text = gemini.generate(prompt, system=guardrails.SYSTEM_RULES, cache_key=str(base))
-    return {**base, "explanation": guardrails.sanitize_output(text) if text else base["why"], "ai": bool(text)}
-
-
-@app.get("/api/review")
-def get_review(month: str | None = None, x_user: str | None = Header(None)):
-    r = review.narrative(uid_of(x_user), month)
-    if r is None:
-        raise HTTPException(404, "No data yet")
-    return {**r, "months": review.months_available(uid_of(x_user))}
-
-
-# ---- coach
-@app.post("/api/chat")
-def chat(body: ChatIn, x_user: str | None = Header(None)):
-    if not body.message.strip():
-        raise HTTPException(400, "Empty message")
-    return coach.chat(uid_of(x_user), body.message.strip()[:1000])
-
-
-@app.get("/api/chat/history")
-def chat_history(x_user: str | None = Header(None)):
-    uid = uid_of(x_user)
-    return {"messages": db.rows("SELECT role,text FROM chat WHERE uid=? ORDER BY id", (uid,))[-40:],
-            "proposals": coach.pending(uid)}
-
-
-@app.post("/api/proposals/{pid}/confirm")
-def confirm(pid: int, x_user: str | None = Header(None)):
-    r = coach.apply_proposal(uid_of(x_user), pid)
-    if r is None:
-        raise HTTPException(404, "Proposal not found")
-    return r
-
-
-@app.post("/api/proposals/{pid}/reject")
-def reject(pid: int, x_user: str | None = Header(None)):
-    return coach.reject_proposal(uid_of(x_user), pid)
-
-
 # ---- frontend (built by Vite into frontend/dist)
-DIST = os.environ.get("FRONTEND_DIST", os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"))
+DIST = os.path.abspath(os.environ.get("FRONTEND_DIST", os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")))
 if os.path.isdir(DIST):
     app.mount("/assets", StaticFiles(directory=os.path.join(DIST, "assets")), name="assets")
 
-    @app.get("/{path:path}")
-    def spa(path: str):
-        f = os.path.join(DIST, path)
-        if path and os.path.isfile(f) and ".." not in path:
+    @app.get("/{path:path}", include_in_schema=False)
+    def spa(path: str) -> FileResponse:
+        """Serve built files; unknown paths fall back to index.html (single-page app). Path traversal safe."""
+        f = os.path.abspath(os.path.join(DIST, path))
+        if path and f.startswith(DIST + os.sep) and os.path.isfile(f):
             return FileResponse(f)
         return FileResponse(os.path.join(DIST, "index.html"))

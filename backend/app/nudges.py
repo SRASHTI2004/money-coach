@@ -3,6 +3,7 @@ import calendar
 
 from . import analytics as an
 from . import planner
+from .config import DRIFT_TOLERANCE, MANDATE_CHANGE_RUPEES, MIN_DAY_FOR_PACE, MIN_SPIKE_BASE, SPIKE_RATIO
 
 FRONT_LOADED = {"Subscriptions", "Rent", "Utilities", "EMI & Loans", "Insurance"}  # bills land on fixed dates
 NO_SPIKE = FRONT_LOADED | {"Other", "Education", "Health", "Savings & Investments"}
@@ -14,9 +15,9 @@ def budget_drift(spent, budget, day, dim, prorate=True):
         return None
     if spent > budget:
         return {"level": "over", "projected": spent / max(day, 1) * dim}
-    if prorate and day >= 5 and day < dim:
+    if prorate and day >= MIN_DAY_FOR_PACE and day < dim:
         proj = spent / day * dim
-        if proj > budget * 1.10:
+        if proj > budget * DRIFT_TOLERANCE:
             return {"level": "drift", "projected": proj}
     return None
 
@@ -64,7 +65,7 @@ def generate(uid):
             continue
         usual = base["by_cat"].get(cat, 0)
         proj = spent / ao.day * dim
-        if usual >= 1000 and proj > usual * 1.4:
+        if usual >= MIN_SPIKE_BASE and proj > usual * SPIKE_RATIO:
             out.append({"id": f"spike:{cat}", "kind": "spike", "severity": "info", "category": cat,
                         "title": f"{cat} is running high this month",
                         "body": f"{cat} is on pace for ~{an.inr(proj)} vs your usual {an.inr(usual)}. "
@@ -96,7 +97,7 @@ def generate(uid):
     from . import db
     for m in db.kv_get(uid, "mandates", {}).values():
         cur = next((r for r in an.detect_recurring(uid, txns) if r["merchant"] == m["merchant"]), None)
-        if cur and abs(cur["amount"] - m["amount"]) > 1:
+        if cur and abs(cur["amount"] - m["amount"]) > MANDATE_CHANGE_RUPEES:
             out.append({"id": f"mandate:{m['merchant']}", "kind": "subscription", "severity": "warn",
                         "title": f"UPI AutoPay: {m['merchant'].title()} is about to cost more",
                         "body": f"Your UPI AutoPay mandate will debit {an.inr(m['amount'])} on {m['date']}, up from "

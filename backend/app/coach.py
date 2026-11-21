@@ -270,10 +270,11 @@ def _fallback_chat(uid, message, trace):
     low = message.lower()
     amt_m = re.search(r"(?:rs\.?|inr|₹)\s*" + _NUM + r"|" + _NUM + r"\s*(?:rs|rupees|inr|₹)", low)
     pct_m = re.search(_NUM + r"\s*(?:%|percent|per cent)", low)
+    bare_m = re.search(r"(?<![\d.])(\d[\d,]{2,}(?:\.\d+)?)(?!\s*%)", low)
     cat = find_category(low)
     increase = re.search(r"goes up|go up|increase|rise|hike|raise|more|higher", low)
     decrease = re.search(r"cut|reduce|lower|decrease|less|drop|trim|save on", low)
-    if re.search(r"what if|how would|simulate|if i|if my", low) or (cat or "income" in low) and (pct_m or amt_m) and (increase or decrease):
+    if re.search(r"what if|how would|simulate|if i|if my", low) or (cat or "income" in low) and (pct_m or amt_m or bare_m) and (increase or decrease):
         adjs = []
         sign = 1 if increase and not decrease else -1
         if "income" in low or "salary" in low:
@@ -282,11 +283,11 @@ def _fallback_chat(uid, message, trace):
             elif re.search(r"raise|hike|increase|more|up", low):
                 sign = 1
             cat = "Income"
-        if cat and (pct_m or amt_m):
+        if cat and (pct_m or amt_m or bare_m):
             if pct_m:
                 adjs.append({"category": cat, "percent": sign * float(pct_m.group(1).replace(",", ""))})
             else:
-                v = float((amt_m.group(1) or amt_m.group(2)).replace(",", ""))
+                v = float(((amt_m.group(1) or amt_m.group(2)) if amt_m else bare_m.group(1)).replace(",", ""))
                 adjs.append({"category": cat, "amount": sign * v})
             res = tool_run_what_if(uid, adjs)
             trace.append({"tool": "run_what_if", "args": {"adjustments": adjs}})

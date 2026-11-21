@@ -1,6 +1,6 @@
 import { CAT_COLORS, inr, monthName } from "./api";
 
-export type Ctx = { refresh: () => Promise<void>; toast: (m: string) => void; summary: any; goTab: (t: string) => void };
+export type Ctx = { refresh: () => Promise<void>; toast: (m: string, kind?: string) => void; summary: any; goTab: (t: string) => void };
 
 export function Md({ text }: { text: string }) {
   const bold = (s: string) =>

@@ -35,7 +35,7 @@ def load_demo(uid):
     for d, kind, title, detail, why in [
         ("2026-08-01", "income", "Profile created: income ₹85,000/month", "", "Set up from your first bank statement."),
         ("2026-08-03", "goal", "New goal: Goa trip ₹60,000 by 31 Mar 2027", "₹7,500/month planned", "Added in Plan."),
-        ("2026-08-20", "emergency", "Emergency fund target set to 6 months of essentials", "currently ₹1,20,000",
+        ("2026-08-20", "emergency", "Emergency fund target set to 6 months of essentials", "currently ₹1,80,000",
          "You wanted a safety net before bigger goals."),
         ("2026-09-10", "goal", "New goal: New laptop ₹90,000 by 31 Jul 2027", "₹6,000/month planned", "Added in Plan."),
         ("2026-10-05", "goal", "New goal: Japan vacation ₹2,50,000 by 31 Dec 2027", "₹5,000/month planned",

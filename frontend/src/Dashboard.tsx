@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { api, inr, monthName } from "./api";
+import { api, inr, inrShort, monthName } from "./api";
 import { Ctx, Donut, Progress, Sev, Trend } from "./parts";
 
 export default function Dashboard({ summary: s, toast, goTab }: Ctx) {
   const [nudges, setNudges] = useState<any[]>([]);
   const [open, setOpen] = useState<Record<string, any>>({});
+  const [all, setAll] = useState(false);
   useEffect(() => { api("/nudges").then(setNudges).catch(() => {}); }, [s]);
 
   const explain = async (id: string) => {
@@ -19,20 +20,36 @@ export default function Dashboard({ summary: s, toast, goTab }: Ctx) {
   const budgets = s.profile.budgets as Record<string, number>;
   const cats = Object.entries(cur.by_cat as Record<string, number>).filter(([, v]) => v > 0)
     .map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  const urgent = nudges.filter((n) => n.severity !== "info").length;
+  const shown = all ? nudges : nudges.slice(0, 3);
+  const onTrack = snap.goals.items.filter((g: any) => g.on_track).length;
 
   return (
     <>
-      <div className="grid g4" style={{ marginBottom: 16 }}>
-        <div className="stat"><div className="l">Spent in {monthName(cur.month)}</div><div className="v">{inr(cur.spend)}</div><div className="s">up to {s.as_of}</div></div>
+      <div className="card hero-card">
+        <div className="l">Free cash each month</div>
+        <div className="big-num">{inr(snap.free_cash)}</div>
+        <div className="small" style={{ opacity: 0.85 }}>
+          After {inr(snap.spend)} of spending{snap.invested ? ` and ${inr(snap.invested)} of SIPs` : ""}, from {inr(snap.income)} income.
+          Your plan sets aside {inr(snap.goals.planned_total)} for goals.
+        </div>
+        <div className="row" style={{ marginTop: 12 }}>
+          <span className={"pill " + (urgent ? "warn" : "good")}>{urgent ? `${urgent} thing${urgent > 1 ? "s" : ""} need attention` : "All on plan"}</span>
+          <span className="pill">{onTrack}/{snap.goals.items.filter((g: any) => g.kind === "goal").length || snap.goals.items.length} goals on track</span>
+          <span className="pill">as of {s.as_of}</span>
+        </div>
+      </div>
+
+      <div className="grid g3" style={{ marginBottom: 16 }}>
+        <div className="stat"><div className="l">Spent in {monthName(cur.month)}</div><div className="v">{inr(cur.spend)}</div><div className="s">{inrShort(cur.spend)} so far</div></div>
         <div className="stat"><div className="l">Income / month</div><div className="v">{inr(snap.income)}</div><div className="s">{s.profile.monthly_income ? "from your profile" : "estimated"}</div></div>
-        <div className="stat"><div className="l">Free cash / month</div><div className="v">{inr(snap.free_cash)}</div><div className="s">after spending &amp; SIPs</div></div>
-        <div className="stat"><div className="l">Emergency fund</div><div className="v">{snap.emergency_months ?? "-"} mo</div><div className="s">target {s.profile.emergency_target_months} months</div></div>
+        <div className="stat"><div className="l">Emergency fund</div><div className="v">{snap.emergency_months ?? "-"} mo</div><div className="s">{inr(s.profile.emergency_fund)} saved &middot; target {s.profile.emergency_target_months} mo</div></div>
       </div>
 
       <div className="card">
         <h2>Nudges {nudges.length > 0 && <span className="badge info">{nudges.length}</span>}</h2>
         {nudges.length === 0 && <p className="mute">All on plan - nothing needs your attention.</p>}
-        {nudges.map((n) => (
+        {shown.map((n) => (
           <div key={n.id} className={"nudge " + n.severity}>
             <div className="row"><b style={{ flex: 1 }}>{n.title}</b><Sev s={n.severity} /></div>
             <div className="small">{n.body}</div>
@@ -42,15 +59,16 @@ export default function Dashboard({ summary: s, toast, goTab }: Ctx) {
               {n.kind === "subscription" && <button className="btn sm ghost" onClick={() => goTab("subs")}>See subscriptions</button>}
             </div>
             {open[n.id] && (
-              <div className="small" style={{ marginTop: 8, padding: 10, background: "#fff", borderRadius: 8 }}>
+              <div className="small ai-note" style={{ marginTop: 8 }}>
                 {open[n.id].loading ? "Thinking..." : <>
                   {open[n.id].explanation}
-                  <div className="mute" style={{ marginTop: 4 }}>{open[n.id].ai ? "Explained by Gemini from your numbers" : "Built-in explanation (AI offline)"}</div>
+                  <div className="mute" style={{ marginTop: 4 }}>{open[n.id].ai ? "Explained by Gemini from your numbers" : "Built-in explanation"}</div>
                 </>}
               </div>
             )}
           </div>
         ))}
+        {nudges.length > 3 && <button className="btn sm muted" onClick={() => setAll(!all)}>{all ? "Show fewer" : `Show ${nudges.length - 3} more`}</button>}
       </div>
 
       <div className="grid g2 stack">

@@ -18,19 +18,36 @@ export default function Subscriptions({ summary, toast, refresh }: Ctx) {
     <>
       <div className="card">
         <h2>Recurring payments we found</h2>
-        <p style={{ margin: 0 }}>Subscriptions cost you <b>{inr(d.monthly_total)}/month</b> ({inr(d.monthly_total * 12)}/year). Detection is deterministic: same merchant, regular gaps, similar amounts.</p>
+        <p style={{ margin: 0 }}>Subscriptions cost you <b>{inr(d.monthly_total)}/month</b> ({inr(d.monthly_total * 12)}/year). Detection is deterministic: same merchant, regular gaps, similar amounts, plus UPI AutoPay mandates.</p>
       </div>
+
+      {d.mandates.length > 0 && (
+        <div className="card">
+          <h2>Upcoming UPI AutoPay mandates</h2>
+          <p className="small mute" style={{ marginTop: -6 }}>Read from your bank SMS notices.</p>
+          {d.mandates.map((m: any) => (
+            <div key={m.merchant} className={"nudge " + (m.changed ? "warn" : "info")}>
+              <div className="row"><b style={{ flex: 1, textTransform: "capitalize" }}>{m.name}</b>
+                <span><b>{inr(m.amount)}</b> on {dateFmt(m.date)}</span></div>
+              {m.changed
+                ? <div className="small">Up from {inr(m.current_amount)}. Review or revoke this mandate in your UPI app before it debits.</div>
+                : <div className="small mute">Same as your last charge.</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
       {groups.map(([title, items]) => items.length > 0 && (
         <div className="card" key={title}>
           <h2>{title}</h2>
           {items.map((s) => (
             <div key={s.merchant} style={{ padding: "10px 0", borderBottom: "1px solid var(--line)" }}>
               <div className="row">
-                <b style={{ flex: 1, textTransform: "capitalize" }}>{s.merchant}</b>
+                <b style={{ flex: 1, textTransform: "capitalize" }}>{s.merchant} {s.autopay && <span className="badge info">UPI AutoPay</span>}</b>
                 <span><b>{inr(s.amount)}</b> <span className="mute small">/ {s.cadence.replace("ly", "")}{s.fixed_amount ? "" : " (varies)"}</span></span>
               </div>
-              <div className="small mute">Seen {s.count}x since {dateFmt(s.first_date)} - next around {dateFmt(s.next_date)}
-                {s.last_used && <> - last used {dateFmt(s.last_used)}</>}</div>
+              <div className="small mute">Seen {s.count}x since {dateFmt(s.first_date)} &middot; next around {dateFmt(s.next_date)}
+                {s.last_used && <> &middot; last used {dateFmt(s.last_used)}</>}</div>
               {s.alerts.filter((a: any) => a.type !== "upcoming").map((a: any, i: number) => (
                 <div key={i} className={"nudge " + a.severity} style={{ marginTop: 8, marginBottom: 0 }}>
                   <span className={"badge " + (a.type === "price_change" ? "warn" : a.type === "unused" ? "alert" : "info")}>

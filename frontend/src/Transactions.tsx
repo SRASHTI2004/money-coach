@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { api, dateFmt, inr, monthName } from "./api";
+import { api, CAT_SRC, dateFmt, inr, monthName, SRC_LABEL } from "./api";
 import { Ctx } from "./parts";
 
-const SRC: Record<string, string> = { rule: "your rule", keyword: "built-in", ai: "Gemini", history: "learned", user: "you", none: "-" };
+const SRC = CAT_SRC;
 
 export default function Transactions({ refresh, toast, summary }: Ctx) {
   const [tx, setTx] = useState<any[]>([]);
   const [cats, setCats] = useState<string[]>([]);
   const [rules, setRules] = useState<any[]>([]);
   const [f, setF] = useState({ month: "", category: "", q: "" });
+  const [srcF, setSrcF] = useState("");
   const [paste, setPaste] = useState("");
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<any>(null);
@@ -35,8 +36,8 @@ export default function Transactions({ refresh, toast, summary }: Ctx) {
   const fix = async (t: any, category: string) => {
     const r = await api("/transactions/" + t.id, { method: "PATCH", body: { category } });
     toast(r.rule_created
-      ? `Learned: "${r.merchant}" -> ${category}.` + (r.also_updated ? ` Also updated ${r.also_updated} other transaction(s).` : "") + " Future ones will follow."
-      : "Updated.");
+      ? `"${r.merchant}" -> ${category}.` + (r.also_updated ? ` Also re-labelled ${r.also_updated} other transaction(s).` : "") + " Future ones will follow automatically."
+      : "Updated.", r.rule_created ? "learn" : undefined);
     await refresh();
   };
 
@@ -74,16 +75,22 @@ export default function Transactions({ refresh, toast, summary }: Ctx) {
           </select>
           <input placeholder="Search" value={f.q} onChange={(e) => setF({ ...f, q: e.target.value })} style={{ width: 120 }} />
         </div>
+        <div className="chips" style={{ marginTop: 0 }}>
+          {["", "sms", "pdf", "csv"].map((k) => {
+            const n = k ? tx.filter((t) => t.source === k).length : tx.length;
+            return <button key={k} className={"chip" + (srcF === k ? " on" : "")} onClick={() => setSrcF(k)}>{k ? `Parsed from ${SRC_LABEL[k]}` : "All sources"} <b>{n}</b></button>;
+          })}
+        </div>
         <p className="small mute" style={{ marginTop: 0 }}>Wrong category? Change it - the coach learns a rule for that merchant and applies it everywhere.</p>
         <div className="scroll-x">
           <table>
             <thead><tr><th>Date</th><th>Description</th><th>Category</th><th className="n">Amount</th></tr></thead>
             <tbody>
-              {tx.map((t) => (
+              {tx.filter((t) => !srcF || t.source === srcF).map((t) => (
                 <tr key={t.id}>
                   <td className="small" style={{ whiteSpace: "nowrap" }}>{dateFmt(t.date)}</td>
                   <td><div style={{ maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t.description}>{t.description}</div>
-                    <div className="small mute">{t.source.toUpperCase()} - categorised by {SRC[t.cat_source]}</div></td>
+                    <div className="small mute"><span className={"src src-" + t.source}>{SRC_LABEL[t.source]}</span> categorised by {SRC[t.cat_source]}</div></td>
                   <td><select value={t.category} onChange={(e) => fix(t, e.target.value)}>{cats.map((c) => <option key={c}>{c}</option>)}</select></td>
                   <td className={"n " + (t.amount > 0 ? "pos" : "")}>{inr(t.amount, true)}</td>
                 </tr>

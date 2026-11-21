@@ -227,6 +227,28 @@ def _declarations():
     ])]
 
 
+def brief(name, result):
+    """One-line, human-readable result of a tool call, shown in the UI as a visible 'step'."""
+    try:
+        if name == "run_what_if":
+            return result["summary"]
+        if name == "list_subscriptions":
+            return f"{len(result)} recurring payments found"
+        if name == "list_nudges":
+            return f"{len(result)} nudges active"
+        if name == "explain_nudge":
+            return result.get("nudge", {}).get("title", result.get("error", "nudge"))
+        if name == "get_profile":
+            return f"income {an.inr(result['monthly_income'])}, free cash {an.inr(result['free_cash_per_month'])}/month"
+        if name == "get_spending_summary":
+            return f"{result.get('month')}: spent {an.inr(result.get('spend', 0))}"
+        if name == "propose_change":
+            return "proposal created - waiting for your Confirm" if "proposal_id" in result else result.get("error", "")
+    except Exception:
+        pass
+    return ""
+
+
 def _history(uid, limit=8):
     rows = db.rows("SELECT role,text FROM chat WHERE uid=? ORDER BY id DESC LIMIT ?", (uid, limit))
     return list(reversed(rows))
@@ -258,7 +280,7 @@ def _ai_chat(uid, message, trace):
                 result = fn(uid, **args) if fn else {"error": "unknown tool"}
             except Exception as e:  # tool errors go back to the model, not the user
                 result = {"error": str(e)}
-            trace.append({"tool": c.name, "args": json.loads(json.dumps(args, default=str))})
+            trace.append({"tool": c.name, "args": json.loads(json.dumps(args, default=str)), "result": brief(c.name, result)})
             out_parts.append(types.Part.from_function_response(name=c.name, response={"result": json.loads(json.dumps(result, default=str))}))
         contents.append(types.Content(role="user", parts=out_parts))
     return None
@@ -292,41 +314,43 @@ def _fallback_chat(uid, message, trace):
                 v = float(((amt_m.group(1) or amt_m.group(2)) if amt_m else bare_m.group(1)).replace(",", ""))
                 adjs.append({"category": cat, "amount": sign * v})
             res = tool_run_what_if(uid, adjs)
-            trace.append({"tool": "run_what_if", "args": {"adjustments": adjs}})
+            trace.append({"tool": "run_what_if", "args": {"adjustments": adjs}, "result": brief("run_what_if", res)})
             text = f"Here's the scenario: {res['summary']}"
             if cat != "Income" and sign < 0:
                 new = res["applied"][0]["to"]
                 tool_propose_change(uid, "set_budget", f"Matches the what-if: {cat} at {an.inr(new)}/month",
                                     category=cat, amount=new)
-                trace.append({"tool": "propose_change", "args": {"kind": "set_budget", "category": cat, "amount": new}})
+                trace.append({"tool": "propose_change", "args": {"kind": "set_budget", "category": cat, "amount": new},
+                               "result": "proposal created - waiting for your Confirm"})
                 text += f"\n\nI've proposed a {cat} budget of {an.inr(new)}/month - confirm below to apply it."
             return text
     if re.search(r"subscription|recurring|netflix|spotify|gym", low):
         subs = tool_list_subscriptions(uid)
-        trace.append({"tool": "list_subscriptions", "args": {}})
+        trace.append({"tool": "list_subscriptions", "args": {}, "result": brief("list_subscriptions", subs)})
         subs = [s for s in subs if s["kind"] == "subscription"] or subs
         lines = [f"- {s['merchant'].title()}: {an.inr(s['amount'])}/{s['cadence']}" + (f" - {s['alerts'][0]}" if s["alerts"] else "") for s in subs[:8]]
         return "Here are your recurring payments:\n" + "\n".join(lines)
     if re.search(r"nudge|why|off track|drift|alert|over budget", low):
         ns = tool_list_nudges(uid)
-        trace.append({"tool": "list_nudges", "args": {}})
+        trace.append({"tool": "list_nudges", "args": {}, "result": brief("list_nudges", ns)})
         if not ns:
             return "No nudges right now - you're tracking within plan."
         target = next((n for n in ns if cat and n["id"].endswith(cat)), ns[0])
         ex = tool_explain_nudge(uid, target["id"])
-        trace.append({"tool": "explain_nudge", "args": {"nudge_id": target["id"]}})
+        trace.append({"tool": "explain_nudge", "args": {"nudge_id": target["id"]}, "result": brief("explain_nudge", ex)})
         return f"**{target['title']}** - {ex.get('why', target['body'])}" + (
             f"\n\nIf you trimmed 15% of your usual: {ex['if_you_trim_15pct_of_usual']}" if ex.get("if_you_trim_15pct_of_usual") else "")
     if re.search(r"goal|target|on track|afford", low):
         p = tool_get_profile(uid)
-        trace.append({"tool": "get_profile", "args": {}})
+        trace.append({"tool": "get_profile", "args": {}, "result": brief("get_profile", p)})
         lines = [f"- {g['name']}: {an.inr(g['saved'])}/{an.inr(g['target'])}, "
                  f"{'on track' if g['on_track'] else 'behind (needs ' + an.inr(g['required_monthly'] or 0) + '/mo)'}" for g in p["goals"]]
         return "Your goals:\n" + "\n".join(lines)
     m = re.search(r"(?:set|change|make|update).{0,25}budget.{0,25}?" + _NUM, low)
     if cat and m:
         r = tool_propose_change(uid, "set_budget", "Requested in chat", category=cat, amount=float(m.group(1).replace(",", "")))
-        trace.append({"tool": "propose_change", "args": {"kind": "set_budget", "category": cat}})
+        trace.append({"tool": "propose_change", "args": {"kind": "set_budget", "category": cat},
+                      "result": "proposal created - waiting for your Confirm"})
         return "Done - I've proposed that budget. Press Confirm below to apply it." if "proposal_id" in r else "I couldn't parse that budget."
     return ("I can run what-if scenarios (e.g. *what if I cut dining out by 30%?* or *what if my rent goes up by "
             "₹3,000?*), explain nudges, list subscriptions, and propose budget or goal changes you can confirm. "

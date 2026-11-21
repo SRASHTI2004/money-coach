@@ -62,7 +62,7 @@ Agentic coach: Gemini calls tools (`get_profile`, `run_what_if`, `list_subscript
 - **Structure:** small modules (`backend/app/api/*` routers, `coach_tools` / `coach`, `lifeevents`, `timeline`, `config.py` for named thresholds); typed TypeScript throughout (`frontend/src/types.ts`).
 - **API hardening:** pydantic bounds on every input, upload type/size/PDF-magic limits, per-user rate limit on AI endpoints, security headers (CSP, nosniff, frame deny), path-traversal-safe static serving, one consistent error shape (`{"detail": "..."}`), no stack traces or secrets in responses or logs.
 - **Secrets:** `.env` is git-ignored; `.env.example` has placeholders only; the key is a Render environment variable.
-- **Accessibility:** labelled inputs, keyboard navigation, skip link, visible focus rings, ARIA roles for tabs/dialog/progress/charts, colour-contrast tuned, reduced-motion respected.
+- **Accessibility:** axe-core audit on the live site (every tab, dialog and chat state, desktop and phone) reports **0 violations**; labelled inputs, skip link, landmarks and an h1 per view, visible focus rings, keyboard-closable dialog, ARIA for progress/charts, WCAG AA colour contrast, reduced-motion respected.
 - **Reliability:** loading, empty and error states with retry on every screen; a cold-start message instead of a blank page.
 
 ## Run it

@@ -88,11 +88,12 @@ def store(uid, parsed, kind, notes=None, used_ai_parse=False):
     existing = {r["hash"] for r in db.rows("SELECT hash FROM transactions WHERE uid=?", (uid,))}
     new = [t for t in items if t["hash"] not in existing]
     categorize.categorize_batch(uid, new)
-    for t in new:
-        db.run("INSERT OR IGNORE INTO transactions(uid,date,description,amount,merchant,category,cat_source,source,hash)"
-               " VALUES(?,?,?,?,?,?,?,?,?)",
-               (uid, t["date"], t["description"], t["amount"], t["merchant"], t["category"], t["cat_source"],
-                t.get("source", kind), t["hash"]))
+    with db.conn() as c:  # one transaction for the whole batch (one commit instead of one per row)
+        c.executemany(
+            "INSERT OR IGNORE INTO transactions(uid,date,description,amount,merchant,category,cat_source,source,hash)"
+            " VALUES(?,?,?,?,?,?,?,?,?)",
+            [(uid, t["date"], t["description"], t["amount"], t["merchant"], t["category"], t["cat_source"],
+              t.get("source", kind), t["hash"]) for t in new])
     by_src: dict[str, int] = {}
     for t in new:
         by_src[t["cat_source"]] = by_src.get(t["cat_source"], 0) + 1

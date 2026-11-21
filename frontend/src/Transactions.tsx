@@ -3,6 +3,12 @@ import { api, CAT_SRC, dateFmt, inr, monthName, SRC_LABEL } from "./api";
 import { Ctx } from "./parts";
 
 const SRC = CAT_SRC;
+const SAMPLE_SMS = [
+  "Rs.380.00 debited from A/c XX4821 on 22-11-26 to VPA swiggy@axisbank (Swiggy) Ref 331204455671. -HDFC Bank",
+  "Sent Rs.215.00 from HDFC Bank A/c *4821 to Uber India on 22Nov26 UPI Ref 331299120044",
+  "UPI Mandate: Rs.119.00 debited from A/c XX4821 on 22-11-26 for Spotify India via UPI AutoPay. Ref 331200771120. -HDFC Bank",
+  "Rs.5,500.00 credited to A/c XX4821 on 22-11-26 by NEFT-FREELANCE-DESIGN CLIENT. Avl Bal Rs.61,200.",
+].join("\n\n");
 
 export default function Transactions({ refresh, toast, summary }: Ctx) {
   const [tx, setTx] = useState<any[]>([]);
@@ -53,6 +59,7 @@ export default function Transactions({ refresh, toast, summary }: Ctx) {
           value={paste} onChange={(e) => setPaste(e.target.value)} />
         <div className="row" style={{ marginTop: 8 }}>
           <button className="btn sm" disabled={busy || !paste.trim()} onClick={doPaste}>{busy ? "Reading..." : "Import pasted SMS"}</button>
+          <button className="btn sm ghost" onClick={() => setPaste(SAMPLE_SMS)}>Fill sample UPI SMS</button>
         </div>
         {report && (
           <div className="small" style={{ marginTop: 10, padding: 10, background: "#eef5f3", borderRadius: 8 }}>

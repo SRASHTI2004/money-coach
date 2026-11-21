@@ -4,7 +4,9 @@ export type Ctx = { refresh: () => Promise<void>; toast: (m: string, kind?: stri
 
 export function Md({ text }: { text: string }) {
   const bold = (s: string) =>
-    s.split(/(\*\*[^*]+\*\*)/g).map((p, i) => (p.startsWith("**") ? <b key={i}>{p.slice(2, -2)}</b> : <span key={i}>{p}</span>));
+    s.split(/(\*\*[^*]+\*\*|\*[^*\s][^*]*\*)/g).map((p, i) =>
+      p.startsWith("**") ? <b key={i}>{p.slice(2, -2)}</b>
+        : p.startsWith("*") && p.endsWith("*") && p.length > 2 ? <em key={i}>{p.slice(1, -1)}</em> : <span key={i}>{p}</span>);
   const blocks = text.split(/\n{2,}/);
   return (
     <div className="md">

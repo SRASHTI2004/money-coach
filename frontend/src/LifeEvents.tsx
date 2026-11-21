@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, dateFmt, inr, inrShort, monthName } from "./api";
-import { Ctx } from "./parts";
+import { Ctx, Md } from "./parts";
 
 type Ev = { type: string; start: number; percent?: number; months?: number; amount?: number; cut_pct?: number };
 
@@ -148,7 +148,7 @@ export default function LifeEvents({ summary }: Ctx) {
             <p style={{ margin: "0 0 8px" }}>{sim.summary}</p>
             <div className="ai-note">
               <span className={"badge " + (nar?.ai ? "" : "off")}>{nar ? (nar.ai ? "Gemini explains" : "Summary") : "Gemini is explaining..."}</span>
-              <div className="small" style={{ marginTop: 6 }}>{nar ? nar.text : "..."}</div>
+              <div className="small" style={{ marginTop: 6 }}>{nar ? <Md text={nar.text} /> : "..."}</div>
             </div>
           </div>
           <div className="card">

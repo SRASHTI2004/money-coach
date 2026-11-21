@@ -1,81 +1,87 @@
 # Money Coach - a personal finance coach with a living money model
 
-Built for the Product Space Agentic AI Hackathon (Problem 04). Made for India: INR with lakh/crore grouping (₹1,25,000 · ₹1.8L), UPI / NEFT / card narrations, UPI AutoPay mandates and real bank-SMS formats.
+**Live demo: https://money-coach-k49s.onrender.com** (free hosting: the first load can take ~30 s to wake up)
 
-Most budgeting apps categorise transactions and stop. Money Coach keeps a **living model** of one person's money (income, fixed costs, emergency fund, goals with dates), updates it as new statements arrive, learns from corrections, and answers "what happens if life changes?" without ever recommending a stock or fund.
+Built for the Product Space Agentic AI Hackathon, Problem 04. Made for India: INR with lakh/crore grouping (₹1,25,000 · ₹1.8L), UPI / NEFT / card narrations, UPI AutoPay mandates and real bank-SMS formats.
 
-**Try it in one click:** open the app and press **Try with demo data**. No signup.
+**The problem.** Budgeting apps categorise transactions and stop: they do not understand a person's goals, and they do not adapt when life changes.
+**Our answer.** Money Coach keeps a *living model* of your money (income, fixed costs, emergency fund, goals with dates), learns from your corrections, and answers "what happens if...?" with deterministic maths and an agentic AI coach, without ever recommending a stock or fund.
+
+## Try it in one minute
+
+1. Open the live link and click **Try with demo data** (a CSV, a PDF statement and bank SMS are ingested; no signup).
+2. Go to **Transactions** -> click **Fill sample UPI SMS** -> **Import pasted SMS** (raw UPI/bank SMS parsed, including a UPI AutoPay debit). Note the SMS / PDF / CSV badges on each row.
+3. In the same table, change any row's category (e.g. a Dining item to **Shopping**). A green **Learned rule** toast appears and similar rows are re-labelled.
+4. Open **Life events** -> click **Job loss + new EMI**. Watch the emergency fund dip and every goal date slip (before/after lanes); Gemini explains the result.
+5. Open **Coach** -> click **Set my dining budget to 4000 and explain why** -> see the numbered tool steps -> click **Confirm**.
+6. Still in **Coach**, click **Which mutual fund should I buy?** -> an educational answer with a **Guardrail active** badge, naming no product.
+7. Optional: **Timeline** (why your model changed), **Subscriptions** (Netflix price rise, unused gym, Hotstar AutoPay hike), **How it works** (header button).
+
+## Requirements (all 8 brief items)
+
+| # | Brief requirement | Where it lives | How it works |
+|---|---|---|---|
+| 1 | Ingest messy statements (PDF, CSV, SMS) + auto-categorise | **Transactions** | CSV with bank preambles and split debit/credit or Dr/Cr; PDF tables (direction inferred from the running balance); pasted SMS (HDFC/SBI/ICICI/Axis styles, OTPs/promos ignored). Categories: your rules, then built-in keywords, then merchant history, then **Gemini** for unknown merchants. Anything the parsers cannot read is rescued by Gemini. |
+| 2 | Correction loop: fix a category, learn a rule | **Transactions** | One correction stores a rule on the normalised merchant, re-labels past rows and applies to future uploads from any source. Rules are listed and can be forgotten. |
+| 3 | Recurring payments + subscriptions, with price-change / unused alerts | **Subscriptions** | Deterministic detection of regular weekly/monthly/quarterly/yearly charges, plus **UPI AutoPay** mandates (including upcoming-mandate notices). Alerts: price change, seems unused, overlapping streaming, cancelled, mandate about to cost more. |
+| 4 | Persistent profile: income, fixed costs, emergency fund, goals with dates | **Plan & goals**, **Timeline** | Stored in SQLite. The Timeline records every change with a reason, plus changes detected from the statements. |
+| 5 | Goal planner + what-if ("cut dining 30%", "rent goes up") | **What-if**, **Life events** | One-shot what-if, and a month-by-month life-event engine (salary change, job loss, rent increase, new EMI) with before/after emergency-fund curve and goal dates. |
+| 6 | Nudges when spending drifts off plan | **Dashboard** | Budget pace tracking for the month, goals behind schedule, low emergency fund, subscription and AutoPay alerts, each with "Explain this". |
+| 7 | Monthly review report | **Monthly review** | Numbers computed in code, narrated by Gemini (template fallback), printable. |
+| 8 | Guardrails: educate and model, never recommend securities | **Coach**, everywhere | Enforced in code on input and output, plus system prompt, a visible guardrail badge and a disclaimer on every screen. |
+
+Agentic coach: Gemini calls tools (`get_profile`, `run_what_if`, `list_subscriptions`, `list_nudges`, `explain_nudge`, `get_spending_summary`, `propose_change`). It can only **propose** a change; nothing applies until the user clicks **Confirm**, and the change is then recorded on the Timeline.
 
 ## Standout features
 
-1. **Life event simulator** - stack a salary hike, a 3-month job loss, a rent increase and a new EMI. A month-by-month engine shows the emergency-fund curve (before vs after, with the lowest point and whether it runs out) and moves every goal date on a before/after timeline. The maths is deterministic; Gemini only explains the result.
-2. **Living money model timeline** - a dated history of how your profile changed and *why*: new income source, salary change, goals added, budgets set, emergency fund updated, subscription price rises, subscriptions that quietly stopped, rules the coach learned, coach proposals you confirmed. Part is logged, part is *detected from the statements themselves*.
-3. **Visible AI** - every coach answer shows the tool steps it took (`run_what_if(Dining -30%)` -> result), every proposed change appears as a card with **Confirm / Dismiss**, correcting a category pops a **"Learned rule"** toast, and every transaction shows whether it was parsed from **SMS / PDF / CSV** and what categorised it (built-in, your rule, learned, Gemini).
-4. **Indian touches** - paste raw bank/UPI SMS (HDFC/SBI/ICICI/Axis styles; OTPs and promos ignored), **UPI AutoPay mandates** detected as subscriptions (including *upcoming* mandate notices that flag a price rise before it debits), lakh/crore formatting everywhere.
-5. **Guardrail demo** - ask "Which mutual fund should I buy?" and the coach explains priorities, risk and diversification, names no product, and shows a visible **Guardrail active** badge. A disclaimer is pinned on every screen.
-
-## All requirements (Problem 04)
-
-| # | Requirement | How it works |
-|---|---|---|
-| 1 | Messy ingestion + categorisation | CSV (bank preambles, split debit/credit or Dr/Cr), PDF (table layout, direction inferred from the running balance), pasted SMS. Categories: your rules -> built-in keywords -> history of the same merchant -> **Gemini** for unknown merchants. Text the regex parsers cannot read is rescued by Gemini. |
-| 2 | Correction loop | Fix a category once: a rule is stored on the normalised merchant, existing transactions are re-labelled, future uploads (even from another source) follow it. Rules are listed and can be forgotten. |
-| 3 | Recurring + subscriptions | Deterministic detection (regular weekly/monthly/quarterly/yearly gaps). Alerts for price change, seems unused, overlapping streaming services, cancelled subscriptions, upcoming AutoPay debits. |
-| 4 | Persistent profile | Income, fixed costs, emergency fund (+ target months and monthly top-up), budgets, goals with dates - in SQLite. |
-| 5 | Goal planner + what-if | One-shot what-if (cut a category by %, change rent/income, add an EMI) plus the month-by-month life event simulator. Surplus beyond plan is steered to goals that are behind. |
-| 6 | Nudges | Budget pace tracking for the month, goals behind schedule, low emergency fund, subscription and AutoPay alerts; "Explain this" per nudge. |
-| 7 | Monthly review | Numbers computed in code, narrated by Gemini (template fallback), printable. |
-| 8 | Guardrails | Enforced in code on input *and* output, plus the system prompt and a visible disclaimer. |
-
-### The agentic coach
-Gemini calls **tools**: `get_profile`, `run_what_if`, `list_subscriptions`, `list_nudges`, `explain_nudge`, `get_spending_summary`, `propose_change`. It can only *propose* (set a budget, update/create a goal, update a profile field). **Nothing changes until the user clicks Confirm**, and the confirmed change is recorded on the timeline.
+- **Life event simulator** - stack a hike, a job loss, a rent rise and a new EMI; see the fund and each goal month by month.
+- **Living money model timeline** - what changed and why, logged or detected from your data.
+- **Visible AI** - tool steps on every coach answer, Confirm cards, "Learned rule" toast, per-row SMS/PDF/CSV and categoriser badges.
+- **Indian touches** - raw SMS paste, UPI AutoPay detection, lakh/crore formatting.
+- **Guardrail you can see** - asked for a fund, it explains risk and diversification and names nothing.
 
 ## How AI is used (and where it is not)
 
-- **Deterministic code** does all money maths: totals, baselines, recurring detection, simulations, drift, goal projections, the life-event engine. Covered by tests.
-- **Gemini** (`gemini-3.5-flash`, fallback `gemini-3.5-flash-lite`) does: parsing text the regex cannot read, categorising unknown merchants, the monthly narrative, nudge and life-event explanations, and the tool-calling coach.
-- **Pre-computed demo cache:** `backend/app/gemini_cache.json` holds real Gemini results for the bundled demo data (categorisation, four monthly reviews, nudge explanations, life-event narrations, coach answers incl. tool steps). The demo is instant and never shows "AI busy". Cached coach answers are labelled "pre-computed for the demo data". **Live Gemini still runs for anything new** (your own uploads, new questions). Regenerate with `python scripts/build_demo_cache.py`.
-- **Results cache** by content hash for live calls too, then a **20 s timeout + 45 s circuit breaker**; if Gemini is down or out of quota the app falls back to keyword/history categorisation, template reviews and a rule-based coach that still runs what-ifs, lists subscriptions and proposes budgets. The header badge shows the mode.
+- **Plain code** does all money maths (totals, averages, free cash, goal dates, drift, the simulators), subscription detection and rule learning. Covered by tests.
+- **Gemini** (`gemini-3.5-flash`, fallback `gemini-3.5-flash-lite`) parses text the regex cannot, labels unknown merchants, writes the monthly review, explains nudges and simulations, and runs the tool-calling coach.
+- **Pre-computed demo cache:** `backend/app/gemini_cache.json` holds real Gemini results for the bundled demo data, so the demo is instant and never shows "AI busy". Cached coach answers are labelled as pre-computed. **Live Gemini still runs for anything new.** Regenerate with `python scripts/build_demo_cache.py`.
+- **Resilience:** results cached by content hash, 20 s timeout and a 45 s circuit breaker; if Gemini is down the app falls back to keyword categorisation, template reviews and a rule-based coach, and the header badge shows the mode.
 
 ## Guardrails
 
-The coach educates and models scenarios; it never recommends specific securities, funds or stocks.
-
-1. **Input check** (`backend/app/guardrails.py`): requests to pick, rank or buy a stock/fund/ETF/crypto/scheme get a fixed educational answer and a referral to a SEBI-registered adviser. The model is not called.
-2. **Output check:** every model answer (coach, review, explanations, life-event text) is scanned for product names and "buy X Fund" patterns; a hit replaces the answer with the educational one.
+1. **Input check** (`backend/app/guardrails.py`): requests to pick, rank or buy a stock/fund/ETF/crypto/scheme get a fixed educational answer and a referral to a SEBI-registered adviser; the model is not called.
+2. **Output check:** every model answer (coach, review, explanations, life-event text) is scanned for product names and "buy X Fund" patterns; a hit replaces it with the educational answer.
 3. **System prompt** forbids product recommendations and requires numbers to come from tools.
-4. **Visible guardrail badge** on blocked answers and a **disclaimer** on every screen.
+4. **Visible:** guardrail badge on blocked answers and a disclaimer on every screen.
+
+## Quality and security
+
+- **Checks:** `scripts/check.sh` runs ruff, mypy, pytest, ESLint (`no-explicit-any` enforced), tsc, vitest and the production build.
+- **Structure:** small modules (`backend/app/api/*` routers, `coach_tools` / `coach`, `lifeevents`, `timeline`, `config.py` for named thresholds); typed TypeScript throughout (`frontend/src/types.ts`).
+- **API hardening:** pydantic bounds on every input, upload type/size/PDF-magic limits, per-user rate limit on AI endpoints, security headers (CSP, nosniff, frame deny), path-traversal-safe static serving, one consistent error shape (`{"detail": "..."}`), no stack traces or secrets in responses or logs.
+- **Secrets:** `.env` is git-ignored; `.env.example` has placeholders only; the key is a Render environment variable.
+- **Accessibility:** labelled inputs, keyboard navigation, skip link, visible focus rings, ARIA roles for tabs/dialog/progress/charts, colour-contrast tuned, reduced-motion respected.
+- **Reliability:** loading, empty and error states with retry on every screen; a cold-start message instead of a blank page.
 
 ## Run it
 
 ```bash
 pip install -r requirements.txt
 cd frontend && npm install && npm run build && cd ..
-echo GEMINI_API_KEY=your_key > .env          # git-ignored, never committed
+cp .env.example .env     # then put your GEMINI_API_KEY in .env (git-ignored)
 cd backend && uvicorn app.main:app --port 8000   # http://localhost:8000
 ```
 
-Dev: `uvicorn app.main:app --port 8000` in `backend/` and `npm run dev` in `frontend/`. Tests: `python -m pytest -q` (parsing, rule learning, recurring/AutoPay, simulation, life events, timeline, nudges, guardrails, cache replay, API flows; AI is disabled in tests). Docker: `docker build -t money-coach . && docker run -p 8000:8000 -e GEMINI_API_KEY=... money-coach`.
+Dev: `uvicorn` in `backend/` plus `npm run dev` in `frontend/`. All gates: `pip install -r requirements-dev.txt && scripts/check.sh`. Docker: `docker build -t money-coach . && docker run -p 8000:8000 -e GEMINI_API_KEY=... money-coach`. Render: create a Blueprint from `render.yaml` and set `GEMINI_API_KEY` (SQLite lives in `/tmp` on the free tier, so data resets on restart; the demo reloads in one click).
 
-### Deploy on Render
-Push the repo, create a **Blueprint** from `render.yaml`, set `GEMINI_API_KEY` in the dashboard. One Docker web service serves API and UI. SQLite lives in `/tmp` on the free tier, so data resets on restart; the demo reloads in one click.
+`DEMO_SCRIPT.md` is the 2:30 video script. Sample files are in `samples/` (`python scripts/generate_samples.py`). Open the app with `?u=anything&tab=coach` to jump to a tab with a fresh anonymous profile. `FINAL_REPORT.md` lists what was verified.
 
-## Demo in 60 seconds
-1. **Try with demo data** (a CSV, a PDF statement and bank SMS are ingested through the real pipeline).
-2. **Life events** -> "Job loss + new EMI": watch the emergency fund dip and goals slip.
-3. **Coach** -> "Set my dining budget to 4000 and explain why" -> tool steps -> **Confirm**.
-4. **Timeline** shows that change with its reason; **Subscriptions** shows the Netflix price rise, the unused gym and the Hotstar AutoPay hike.
-5. Ask "Which mutual fund should I buy?" to see the guardrail badge.
-
-`DEMO_SCRIPT.md` is the 2:30 video script. Sample files are in `samples/` (`python scripts/generate_samples.py` regenerates them; `samples/sms_quick_paste.txt` is a short paste set, and the Transactions screen has a "Fill sample UPI SMS" button). Open the app with `?u=anything&tab=coach` to jump to a tab with a fresh anonymous profile.
-
-## Project layout
+## Layout
 ```
-backend/app/   parsing ingest categorize analytics planner lifeevents timeline nudges review
-               coach guardrails gemini seed main db   (+ gemini_cache.json)
-backend/tests/ pytest suite        frontend/src/  React + TypeScript (Vite)
-samples/       demo CSV, PDF, SMS  scripts/       sample + cache generators
+backend/app/   api/ (routers, schemas)  parsing ingest categorize analytics planner lifeevents timeline
+               nudges review coach_tools coach guardrails gemini seed config main db  (+ gemini_cache.json)
+backend/tests/ pytest suite     frontend/src/  React + TypeScript (Vite), vitest     samples/  scripts/
 ```
 
 ## Limitations
-INR only, per-browser anonymous profile (no login), "unused subscription" relies on a last-used date the user confirms (banks do not expose usage), heuristics are tuned on common Indian bank formats, life-event projections assume today's averages continue.
+INR only; per-browser anonymous profile (no login); "unused subscription" relies on a last-used date the user confirms (banks do not expose usage); heuristics are tuned on common Indian bank formats; life-event projections assume today's averages continue.

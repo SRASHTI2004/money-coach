@@ -65,9 +65,9 @@ async def unexpected_error(_: Request, exc: Exception) -> JSONResponse:
     return _error(500, "Something went wrong on our side. Please try again.")
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health() -> dict[str, Any]:
-    """Liveness + AI status (used by Render and the UI badge)."""
+    """Lightweight liveness + AI status for uptime pings, Render and the UI badge (no database or AI call)."""
     return {"ok": True, "ai_enabled": gemini.enabled(), "ai": gemini.status, "disclaimer": guardrails.DISCLAIMER}
 
 

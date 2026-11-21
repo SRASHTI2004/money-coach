@@ -128,3 +128,12 @@ body{font-size:16px}.small{font-size:13.5px}
 main{display:block}
 .cold-hint{display:block;flex-basis:100%;font-size:13.5px;opacity:0;animation:fadein .5s 3s forwards}
 @keyframes fadein{to{opacity:1}}
+
+/* ---- v4: axe-core fixes (contrast >= 4.5:1) ---- */
+:root{--accent-text:#1f6a64}
+.badge{color:var(--accent-text)}
+button.btn.ghost{color:var(--accent-text);border-color:var(--accent-text)}
+.chip:hover{color:var(--accent-text);border-color:var(--accent-text)}
+.badge.off,.badge.warn{color:var(--warn-text)}.badge.alert{color:var(--bad-text)}.badge.good{color:var(--good-text)}.badge.info{color:#2f5d99}
+.chat:focus-visible{outline:3px solid #1d6fd1;outline-offset:2px}
+.pos{color:var(--good-text)}

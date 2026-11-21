@@ -86,7 +86,7 @@ export default function Coach({ refresh, toast, summary }: Ctx) {
     <section className="card" aria-labelledby="coach-h">
       <h2 id="coach-h">Ask your coach</h2>
       <p className="small mute" style={{ marginTop: -6 }}>It reads your data through tools, runs what-ifs, and can <b>propose</b> changes, but nothing changes until you press Confirm. It never picks stocks, funds or other securities.</p>
-      <div className="chat" role="log" aria-live="polite" aria-label="Conversation">
+      <div className="chat" role="log" aria-live="polite" aria-label="Conversation" tabIndex={0}>
         {msgs.length === 0 && <div className="mute small">Try one of the questions below.</div>}
         {msgs.map((m, i) => (
           <div key={i} className={"msg " + m.role + (m.guard ? " guard" : "")}>

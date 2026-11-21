@@ -76,8 +76,8 @@ export default function WhatIf({ summary }: Ctx) {
           <h2 id="wi-r">Result</h2>
           <div className="grid g3" style={{ marginBottom: 14 }}>
             <div className="stat"><div className="l">Free cash / month</div><div className="v">{inr(res.after.free_cash)}</div><div className="s">was {inr(res.before.free_cash)}</div></div>
-            <div className="stat"><div className="l">Change / month</div><div className="v" style={{ color: res.delta_free_cash >= 0 ? "var(--good)" : "var(--bad)" }}>{inr(res.delta_free_cash, true)}</div></div>
-            <div className="stat"><div className="l">Change / year</div><div className="v" style={{ color: res.delta_yearly >= 0 ? "var(--good)" : "var(--bad)" }}>{inr(res.delta_yearly, true)}</div></div>
+            <div className="stat"><div className="l">Change / month</div><div className="v" style={{ color: res.delta_free_cash >= 0 ? "var(--good-text)" : "var(--bad-text)" }}>{inr(res.delta_free_cash, true)}</div></div>
+            <div className="stat"><div className="l">Change / year</div><div className="v" style={{ color: res.delta_yearly >= 0 ? "var(--good-text)" : "var(--bad-text)" }}>{inr(res.delta_yearly, true)}</div></div>
           </div>
           <p style={{ marginTop: 0 }}>{res.summary}</p>
           <div className="scroll-x"><table>

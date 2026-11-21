@@ -98,7 +98,7 @@ export default function App() {
     <>
       {toastMsg && <div className={"toast " + (toastMsg.kind || "")} role="status" aria-live="polite">{toastMsg.kind === "learn" && <b>Learned rule </b>}{toastMsg.t}</div>}
       {showHow && <HowItWorks onClose={() => setShowHow(false)} />}
-      <div className="disclaimer" role="note">{disclaimer}</div>
+      <footer className="disclaimer">{disclaimer}</footer>
     </>
   );
 
@@ -152,12 +152,13 @@ export default function App() {
     <div className="app">
       <a className="skip" href="#main">Skip to content</a>
       {header}
-      <nav className="tabs" role="tablist" aria-label="Sections">
+      <nav className="tabs" aria-label="Sections">
         {TABS.map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? "on" : ""} onClick={() => goTab(k)}>{l}</button>
+          <button key={k} aria-current={tab === k ? "page" : undefined} className={tab === k ? "on" : ""} onClick={() => goTab(k)}>{l}</button>
         ))}
       </nav>
-      <main id="main" role="tabpanel">
+      <main id="main">
+        <h1 className="sr-only">{TABS.find(([k]) => k === tab)?.[1] ?? "Dashboard"}</h1>
         {empty ? <Transactions {...ctx} /> : <>
           {tab === "home" && <Dashboard {...ctx} />}
           {tab === "coach" && <Coach {...ctx} />}

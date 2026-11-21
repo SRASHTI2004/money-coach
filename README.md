@@ -2,6 +2,8 @@
 
 **Live demo: https://money-coach-k49s.onrender.com** (free hosting: the first load can take ~30 s to wake up)
 
+**Product thinking: [PRODUCT.md](PRODUCT.md)** (target user, insights, jobs to be done, decisions and trade-offs, metrics, roadmap) · **Uptime ping:** `GET /api/health` (lightweight JSON, no database or AI call)
+
 Built for the Product Space Agentic AI Hackathon, Problem 04. Made for India: INR with lakh/crore grouping (₹1,25,000 · ₹1.8L), UPI / NEFT / card narrations, UPI AutoPay mandates and real bank-SMS formats.
 
 **The problem.** Budgeting apps categorise transactions and stop: they do not understand a person's goals, and they do not adapt when life changes.

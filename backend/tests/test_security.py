@@ -58,3 +58,9 @@ def test_ai_endpoints_are_rate_limited():
 def test_static_path_traversal_is_blocked():
     r = c.get("/..%2f..%2fpyproject.toml")
     assert r.status_code in (200, 404) and "ruff" not in r.text
+
+
+def test_health_endpoint_is_lightweight_and_supports_head():
+    r = c.get("/api/health")
+    assert r.status_code == 200 and r.json()["ok"] is True and "disclaimer" in r.json()
+    assert c.head("/api/health").status_code == 200

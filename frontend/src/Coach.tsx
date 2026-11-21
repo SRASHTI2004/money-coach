@@ -8,6 +8,7 @@ type Msg = { role: "user" | "model"; text: string; tools?: Step[]; ai?: boolean;
 const SUGGEST = [
   "What if I cut dining out by 30%?",
   "Why am I over budget on dining?",
+  "Set my dining budget to 4000 and explain why",
   "Which subscriptions should I look at?",
   "Am I on track for my goals?",
   "Which mutual fund should I buy?",
@@ -82,7 +83,7 @@ export default function Coach({ refresh, toast, summary }: Ctx) {
             {m.role === "model" ? <Md text={m.text} /> : m.text}
             {m.tools && m.tools.length > 0 && <Steps tools={m.tools} />}
             {m.role === "model" && !m.guard && m.tools !== undefined && (
-              <div className="tools">{m.ai ? "Answered by Gemini with tools" : "Answered by built-in rules (AI offline)"}</div>)}
+              <div className="tools">{m.cached ? "Gemini answer with tools (pre-computed for the demo data)" : m.ai ? "Answered by Gemini with tools" : "Answered by built-in rules (AI offline)"}</div>)}
           </div>
         ))}
         {busy && <div className="msg model mute">Thinking and using tools...</div>}

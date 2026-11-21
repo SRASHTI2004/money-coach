@@ -18,14 +18,14 @@ def test_demo_load_then_dashboard():
 
 def test_correction_endpoint_creates_rule():
     c.post("/api/demo/load", headers=H)
-    tx = next(t for t in c.get("/api/transactions", headers=H).json() if t["category"] == "Other")
-    assert c.patch(f"/api/transactions/{tx['id']}", json={"category": "Dining"}, headers=H).json()["rule_created"]
+    tx = next(t for t in c.get("/api/transactions", headers=H).json() if t["category"] == "Dining")
+    assert c.patch(f"/api/transactions/{tx['id']}", json={"category": "Shopping"}, headers=H).json()["rule_created"]
     assert c.get("/api/rules", headers=H).json()
 
 
 def test_chat_proposal_requires_confirm():
     c.post("/api/demo/load", headers=H)
-    r = c.post("/api/chat", json={"message": "what if I cut dining out by 30%?"}, headers=H).json()
+    r = c.post("/api/chat", json={"message": "what if i trim dining out by 20 percent please"}, headers=H).json()
     assert r["tools"][0]["tool"] == "run_what_if"
     prop = r["proposals"][0]
     assert c.get("/api/profile", headers=H).json()["budgets"]["Dining"] == 5500  # not applied yet
@@ -38,4 +38,4 @@ def test_simulate_endpoint_and_review_fallback():
     sim = c.post("/api/simulate", json={"adjustments": [{"category": "Dining", "percent": -30}]}, headers=H).json()
     assert sim["delta_free_cash"] > 0 and sim["summary"]
     rv = c.get("/api/review", headers=H).json()
-    assert rv["narrative"] and rv["ai"] is False
+    assert rv["narrative"]

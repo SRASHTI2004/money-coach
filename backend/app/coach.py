@@ -1,6 +1,8 @@
 """Agentic coach: Gemini function-calling loop over deterministic tools, with a rule-based fallback.
 Money maths only ever comes from tools. Changes are PROPOSED (stored pending) and applied only on user Confirm."""
+import hashlib
 import json
+import os
 import re
 from datetime import date
 
@@ -357,19 +359,59 @@ def _fallback_chat(uid, message, trace):
             "(AI chat is offline right now, so I'm using built-in rules.)")
 
 
+def data_fingerprint(uid):
+    """Hash of everything a coach answer depends on, independent of user id - so the demo user's answers can be replayed."""
+    tx = [(t["date"], t["amount"], t["category"]) for t in an.get_txns(uid)]
+    goals = [(g["name"], g["target_amount"], g["saved"], g["target_date"], g["monthly_contrib"]) for g in planner.list_goals(uid)]
+    blob = json.dumps([tx, goals, planner.get_profile(uid), db.kv_get(uid, "mandates", {})], sort_keys=True, default=str)
+    return hashlib.sha1(blob.encode()).hexdigest()
+
+
+def _coach_key(uid, message):
+    return "coach|" + hashlib.sha1((data_fingerprint(uid) + "|" + re.sub(r"\s+", " ", message.lower().strip())).encode()).hexdigest()
+
+
+def _replay(uid, entry):
+    have = {(p["kind"], json.dumps(p["payload"], sort_keys=True)) for p in pending(uid)}
+    for pr in entry.get("proposals", []):
+        payload = dict(pr["payload"])
+        if pr["kind"] == "update_goal":
+            g = _find_goal(uid, payload.get("goal_name"))
+            if not g:
+                continue
+            payload["goal_id"] = g["id"]
+        if (pr["kind"], json.dumps(payload, sort_keys=True)) in have:
+            continue
+        db.run("INSERT INTO proposals(uid,kind,payload,reason) VALUES(?,?,?,?)",
+               (uid, pr["kind"], json.dumps(payload), pr.get("reason")))
+
+
 def chat(uid, message):
     db.run("INSERT INTO chat(uid,role,text) VALUES(?,?,?)", (uid, "user", message))
     blocked = guardrails.check_input(message)
-    trace, ai = [], False
+    trace, ai, cached = [], False, False
     if blocked:
         reply = blocked
     else:
-        reply = _ai_chat(uid, message, trace) if gemini.enabled() else None
-        ai = reply is not None
-        if reply is None:
-            trace.clear()
-            reply = _fallback_chat(uid, message, trace)
-        reply = guardrails.sanitize_output(reply)
+        key = _coach_key(uid, message)
+        hit = db.one("SELECT v FROM cache WHERE h=?", (key,))
+        reply = None
+        if hit:  # pre-computed Gemini answer (demo data) - instant, replayed with its tool steps and proposals
+            entry = json.loads(hit["v"])
+            reply, trace, ai, cached = entry["reply"], entry["tools"], True, True
+            _replay(uid, entry)
+        else:
+            before = {p["id"] for p in pending(uid)}
+            reply = _ai_chat(uid, message, trace) if gemini.enabled() else None
+            ai = reply is not None
+            if reply is None:
+                trace.clear()
+                reply = _fallback_chat(uid, message, trace)
+            reply = guardrails.sanitize_output(reply)
+            if ai and os.environ.get("COACH_CACHE_WRITE") and reply != guardrails.EDUCATIONAL_REPLY:
+                new = [p for p in pending(uid) if p["id"] not in before]
+                db.run("INSERT OR REPLACE INTO cache(h,v) VALUES(?,?)", (key, json.dumps(
+                    {"reply": reply, "tools": trace, "proposals": [{"kind": p["kind"], "payload": p["payload"], "reason": p["reason"]} for p in new]})))
     db.run("INSERT INTO chat(uid,role,text) VALUES(?,?,?)", (uid, "model", reply))
     return {"reply": reply, "ai": ai, "guardrail": bool(blocked) or reply == guardrails.EDUCATIONAL_REPLY,
-            "tools": trace, "proposals": pending(uid), "disclaimer": guardrails.DISCLAIMER}
+            "tools": trace, "cached": cached, "proposals": pending(uid), "disclaimer": guardrails.DISCLAIMER}

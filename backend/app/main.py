@@ -11,6 +11,7 @@ from . import categorize, coach, db, gemini, guardrails, ingest, lifeevents, nud
 
 app = FastAPI(title="Money Coach")
 db.init()
+gemini.preload()
 
 
 def uid_of(x_user: str | None) -> str:

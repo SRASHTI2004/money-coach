@@ -33,7 +33,7 @@ def client():
         if not k:
             return None
         from google.genai import types as _t
-        _client = genai.Client(api_key=k, http_options=_t.HttpOptions(timeout=20000))
+        _client = genai.Client(api_key=k, http_options=_t.HttpOptions(timeout=int(os.environ.get("GEMINI_TIMEOUT_MS", "20000"))))
     return _client
 
 
@@ -54,19 +54,19 @@ def _models():
 def generate(prompt, system=None, json_mode=False, cache_key=None, tools=None, contents=None, raw=False):
     """Returns text (or parsed JSON when json_mode), or None when AI is unavailable.
     With raw=True returns the full response object (used by the tool loop; never cached)."""
-    if not enabled():
-        status.update(available=False, last_error="AI disabled or no API key")
-        return None
     h = None
-    if cache_key and not raw:
+    if cache_key and not raw:  # cache first: pre-computed demo results work even with no key / quota
         h = file_hash(f"{json_mode}|{system}|{cache_key}")
         hit = db.one("SELECT v FROM cache WHERE h=?", (h,))
         if hit:
             status["cache_hits"] += 1
             v = hit["v"]
             return json.loads(v) if json_mode else v
+    if not enabled():
+        status.update(available=False, last_error="AI disabled or no API key")
+        return None
     global _down_until
-    if time.time() < _down_until:  # circuit breaker: recent failure -> skip AI, use non-AI fallbacks instantly
+    if time.time() < _down_until and not os.environ.get("GEMINI_NO_BREAKER"):  # circuit breaker: recent failure -> skip AI, use non-AI fallbacks instantly
         return None
     from google.genai import types
     cfg = {}
@@ -109,3 +109,16 @@ def generate(prompt, system=None, json_mode=False, cache_key=None, tools=None, c
     status.update(available=False, last_error=str(last)[:200])
     _down_until = time.time() + 45
     return None
+
+
+CACHE_FILE = os.path.join(os.path.dirname(__file__), "gemini_cache.json")
+
+
+def preload():
+    """Load pre-computed Gemini results (demo categorisation, reviews, explanations, coach answers) into the cache."""
+    if not os.path.exists(CACHE_FILE):
+        return 0
+    data = json.load(open(CACHE_FILE, encoding="utf-8")).get("cache", {})
+    with db.conn() as c:
+        c.executemany("INSERT OR IGNORE INTO cache(h,v) VALUES(?,?)", list(data.items()))
+    return len(data)
